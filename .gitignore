@@ -1,0 +1,3 @@
+*.dem
+uploads/*
+!uploads/.gitkeep

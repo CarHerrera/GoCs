@@ -105,7 +105,6 @@ func main() {
 		var TeamStats [2]Team
 		lrth := false
 		catch := true
-		switched := false
 		// start := false
 		p.RegisterEventHandler(func(e events.MatchStartedChanged) {
 			GS := p.GameState()
@@ -175,7 +174,6 @@ func main() {
 		// Included the following 3 to help debug why trackers weren't working.
 		p.RegisterEventHandler(func(h events.TeamSideSwitch) {
 			lrth = false
-			switched = true
 			log.Print("SIDES HAVE SWITCHED")
 			temp := TeamStats[0].ID
 			TeamStats[0].ID = TeamStats[1].ID
@@ -192,26 +190,48 @@ func main() {
 				catch = false
 			}
 		})
-		// p.RegisterEventHandler(func(kill events.Kill) {
-		// 	killer := kill.Killer
-		// 	if killer != nil {
-		// 		team := killer.TeamState
-		// 		if !switched {
-		// 			if team.ID() == TeamStats[0].ID {
-		// 				p, _ := TeamStats[0].PlayingPlayers[killer.Name]
-		// 				p.Stats.Kills++
-		// 				TeamStats[0].PlayingPlayers[killer.Name] = p
-		// 			}
-		// 		} else {
-		// 			if team.ID() == TeamStats[1].ID {
-		// 				p, _ := TeamStats[0].PlayingPlayers[killer.Name]
-		// 				p.Stats.Kills++
-		// 				TeamStats[0].PlayingPlayers[killer.Name] = p
-		// 			}
-		// 		}
-		// 		log.Printf("%s got a kill from Team %s %v", killer.Name, team.ClanName(), team.ID())
-		// 	}
-		// })
+		p.RegisterEventHandler(func(kill events.Kill) {
+			killer := kill.Killer
+			asssiter := kill.Assister
+			victim := kill.Victim
+			if killer != nil {
+				team := killer.TeamState
+				if team.ID() == TeamStats[0].ID {
+					p, _ := TeamStats[0].PlayingPlayers[killer.Name]
+					p.Stats.Kills++
+					TeamStats[0].PlayingPlayers[killer.Name] = p
+				} else {
+					p, _ := TeamStats[1].PlayingPlayers[killer.Name]
+					p.Stats.Kills++
+					TeamStats[1].PlayingPlayers[killer.Name] = p
+				}
+				log.Printf("%s got a kill from Team %s %v", killer.Name, team.ClanName(), team.ID())
+			}
+			if asssiter != nil {
+				team := asssiter.TeamState
+				if team.ID() == TeamStats[0].ID {
+					p, _ := TeamStats[0].PlayingPlayers[asssiter.Name]
+					p.Stats.Assists++
+					TeamStats[0].PlayingPlayers[asssiter.Name] = p
+				} else {
+					p, _ := TeamStats[1].PlayingPlayers[asssiter.Name]
+					p.Stats.Assists++
+					TeamStats[1].PlayingPlayers[asssiter.Name] = p
+				}
+			}
+			if victim != nil {
+				team := victim.TeamState
+				if team.ID() == TeamStats[0].ID {
+					p, _ := TeamStats[0].PlayingPlayers[victim.Name]
+					p.Stats.Deaths++
+					TeamStats[0].PlayingPlayers[victim.Name] = p
+				} else {
+					p, _ := TeamStats[1].PlayingPlayers[victim.Name]
+					p.Stats.Deaths++
+					TeamStats[1].PlayingPlayers[victim.Name] = p
+				}
+			}
+		})
 		p.RegisterEventHandler(func(score events.ScoreUpdated) {
 			team1 := score.TeamState
 			team2 := score.TeamState.Opponent

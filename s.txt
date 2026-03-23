@@ -1,0 +1,74 @@
+panic: runtime error: invalid memory address or nil pointer dereference
+        stacktrace:
+        goroutine 82 [running]:
+        runtime/debug.Stack()
+                /home/carlos/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+        github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs.NewParserWithConfig.func1({0xafbd40, 0xc00121eed0})
+                /home/carlos/go/pkg/mod/github.com/markus-wa/demoinfocs-golang/v5@v5.1.2/pkg/demoinfocs/parser.go:552 +0x2a
+        github.com/markus-wa/godispatch.(*Dispatcher).dispatchWithRecover.func1()
+                /home/carlos/go/pkg/mod/github.com/markus-wa/godispatch@v1.4.1/dispatch.go:197 +0x3b
+        panic({0xafbd40?, 0xc00121eed0?})
+                /home/carlos/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/runtime/panic.go:783 +0x132
+        github.com/markus-wa/godispatch.callConsumerCode.func1()
+                /home/carlos/go/pkg/mod/github.com/markus-wa/godispatch@v1.4.1/dispatch.go:122 +0x4d
+        panic({0xafbd40?, 0xc00121eec0?})
+                /home/carlos/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/runtime/panic.go:783 +0x132
+        github.com/markus-wa/godispatch.callConsumerCode.func1()
+                /home/carlos/go/pkg/mod/github.com/markus-wa/godispatch@v1.4.1/dispatch.go:122 +0x4d
+        panic({0xa9b4e0?, 0x1224630?})
+                /home/carlos/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/runtime/panic.go:783 +0x132
+        main.main.func2.5({0xc0026163c0, 0xc001189400, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, ...})
+                /home/carlos/Documents/Gitstiff/GoCs/server.go:197 +0x22
+        reflect.Value.call({0xa5cd00?, 0xc000484360?, 0xc001df32e0?}, {0xbcbffb, 0x4}, {0xc001df33e0, 0x1, 0x985a5b?})
+                /home/carlos/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/reflect/value.go:581 +0xcc6
+        reflect.Value.Call({0xa5cd00?, 0xc000484360?, 0x4?}, {0xc001df33e0?, 0xc97dddee46dd6505?, 0xc00027d730?})
+                /home/carlos/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/reflect/value.go:365 +0xb9
+        github.com/markus-wa/godispatch.callConsumerCode({0xa5cd00?, 0xc000484360?, 0xc001df33f8?}, {0xc001df33e0?, 0x72d9600608e8?, 0x72d9c13c05c0?})
+                /home/carlos/go/pkg/mod/github.com/markus-wa/godispatch@v1.4.1/dispatch.go:125 +0x3f
+        github.com/markus-wa/godispatch.(*Dispatcher).Dispatch(0xc001888360, {0xb94420, 0xc002616400})
+                /home/carlos/go/pkg/mod/github.com/markus-wa/godispatch@v1.4.1/dispatch.go:111 +0x1f0
+        github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs.gameEventHandler.dispatch(...)
+                /home/carlos/go/pkg/mod/github.com/markus-wa/demoinfocs-golang/v5@v5.1.2/pkg/demoinfocs/game_events.go:76
+        github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs.gameEventHandler.playerDeath({0xc00014c3c0, 0x0, 0xc001816b10, 0xc001816b40, 0x0}, 0xc000afd7a0)
+                /home/carlos/go/pkg/mod/github.com/markus-wa/demoinfocs-golang/v5@v5.1.2/pkg/demoinfocs/game_events.go:423 +0x9b1
+        github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs.newGameEventHandler.newGameEventHandler.func2.func17(0xab6ba0?)
+                /home/carlos/go/pkg/mod/github.com/markus-wa/demoinfocs-golang/v5@v5.1.2/pkg/demoinfocs/game_events.go:133 +0x5d
+        github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs.(*parser).handleGameEvent(0xc00014c3c0, 0xc000f12ba0)
+                /home/carlos/go/pkg/mod/github.com/markus-wa/demoinfocs-golang/v5@v5.1.2/pkg/demoinfocs/game_events.go:54 +0x330
+        reflect.Value.call({0xa5e680?, 0xc000484220?, 0xc001df3df0?}, {0xbcbffb, 0x4}, {0xc001df3ef0, 0x1, 0xc001e04150?})
+                /home/carlos/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/reflect/value.go:581 +0xcc6
+        reflect.Value.Call({0xa5e680?, 0xc000484220?, 0x10?}, {0xc001df3ef0?, 0xfb329d972407113?, 0xc0004a4dc0?})
+                /home/carlos/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/src/reflect/value.go:365 +0xb9
+        github.com/markus-wa/godispatch.callConsumerCode({0xa5e680?, 0xc000484220?, 0xc001df3f08?}, {0xc001df3ef0?, 0x0?, 0x41b4c9?})
+                /home/carlos/go/pkg/mod/github.com/markus-wa/godispatch@v1.4.1/dispatch.go:125 +0x3f
+        github.com/markus-wa/godispatch.(*Dispatcher).Dispatch(0xc001888300, {0xb5bca0, 0xc000f12ba0})
+                /home/carlos/go/pkg/mod/github.com/markus-wa/godispatch@v1.4.1/dispatch.go:111 +0x1f0
+        github.com/markus-wa/godispatch.(*Dispatcher).dispatchWithRecover(0xc001888300?, {0xb5bca0?, 0xc000f12ba0?})
+                /home/carlos/go/pkg/mod/github.com/markus-wa/godispatch@v1.4.1/dispatch.go:202 +0x49
+        github.com/markus-wa/godispatch.(*Dispatcher).dispatchQueue(0xc001888300, 0xc0001bd570)
+                /home/carlos/go/pkg/mod/github.com/markus-wa/godispatch@v1.4.1/dispatch.go:177 +0xc5
+        created by github.com/markus-wa/godispatch.(*Dispatcher).AddQueues in goroutine 18
+                /home/carlos/go/pkg/mod/github.com/markus-wa/godispatch@v1.4.1/dispatch.go:162 +0x169
+
+
+goroutine 18 [running]:
+main.main.func2({0xd007d8, 0xc00013a008})
+        /home/carlos/Documents/Gitstiff/GoCs/server.go:259 +0x4c6
+github.com/gofiber/fiber/v3.(*App).next(0xc0002e0008, 0xc00013a008)
+        /home/carlos/go/pkg/mod/github.com/gofiber/fiber/v3@v3.1.0/router.go:156 +0x21d
+github.com/gofiber/fiber/v3.(*DefaultCtx).Next(0xd007d8?)
+        /home/carlos/go/pkg/mod/github.com/gofiber/fiber/v3@v3.1.0/ctx.go:259 +0xa5
+github.com/gofiber/fiber/v3/middleware/cors.New.func2({0xd007d8, 0xc00013a008})
+        /home/carlos/go/pkg/mod/github.com/gofiber/fiber/v3@v3.1.0/middleware/cors/cors.go:177 +0x477
+github.com/gofiber/fiber/v3.(*App).next(0xc0002e0008, 0xc00013a008)
+        /home/carlos/go/pkg/mod/github.com/gofiber/fiber/v3@v3.1.0/router.go:156 +0x21d
+github.com/gofiber/fiber/v3.(*App).requestHandler(0xc0002e0008, 0x4db673?)
+        /home/carlos/go/pkg/mod/github.com/gofiber/fiber/v3@v3.1.0/router.go:331 +0xea
+github.com/valyala/fasthttp.(*Server).serveConn(0xc0001f6b48, {0xcf47b8, 0xc00011a000})
+        /home/carlos/go/pkg/mod/github.com/valyala/fasthttp@v1.69.0/server.go:2465 +0x124b
+github.com/valyala/fasthttp.(*workerPool).workerFunc(0xc0002d46c0, 0xc000126000)
+        /home/carlos/go/pkg/mod/github.com/valyala/fasthttp@v1.69.0/workerpool.go:225 +0x92
+github.com/valyala/fasthttp.(*workerPool).getCh.func1()
+        /home/carlos/go/pkg/mod/github.com/valyala/fasthttp@v1.69.0/workerpool.go:197 +0x32
+created by github.com/valyala/fasthttp.(*workerPool).getCh in goroutine 1
+        /home/carlos/go/pkg/mod/github.com/valyala/fasthttp@v1.69.0/workerpool.go:196 +0x194

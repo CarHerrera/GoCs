@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/gofiber/template/html/v2"
+	"github.com/golang/geo/r3"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
@@ -46,6 +47,15 @@ type Team struct {
 	StartingSide   common.Team       `json:"startside"`
 	PlayingPlayers map[string]Player `json:"Playing"`
 	inited         bool
+}
+type InGame struct {
+	Position []r3.Vector `json:"Positions"`
+}
+type Match struct {
+	GameRounds map[int]Rounds `json:"Rounds"`
+}
+type Rounds struct {
+	Players map[string]InGame `json:"InGamePlayers"`
 }
 
 func main() {
@@ -96,6 +106,58 @@ func main() {
 		}
 		return c.Status(200).JSON(file)
 	})
+
+	app.Get("/2DPlayback/:demoName", func(c fiber.Ctx) error {
+		path := downloaded + "/" + c.Params("demoName")
+		file, _ := os.Open(path)
+		p := dem.NewParser(file)
+		defer p.Close()
+		defer file.Close()
+		match := make(map[int]Rounds)
+		round := make(map[string]InGame)
+		roundCount := 1
+		p.RegisterEventHandler(func(r events.RoundEnd) {
+			match[roundCount] = Rounds{
+				Players: round,
+			}
+			roundCount += 1
+		})
+		resp := Match{
+			GameRounds: match,
+		}
+		p.RegisterEventHandler(func(r events.RoundEnd) {
+			// log.Print("ROUND ENDED")
+			match[roundCount] = Rounds{
+				Players: round,
+			}
+			roundCount += 1
+		})
+		pf, err := p.ParseNextFrame()
+		for pf {
+			GS := p.GameState()
+			players := GS.Participants().Playing()
+			for _, player := range players {
+				pos := player.Position()
+				if val, ok := round[player.Name]; ok {
+					oldLs := val.Position
+					val.Position = append(oldLs, pos)
+					round[player.Name] = val
+				} else {
+					positions := []r3.Vector{pos}
+					start := InGame{
+						Position: positions,
+					}
+					round[player.Name] = start
+				}
+			}
+			pf, err = p.ParseNextFrame()
+		}
+		if err != nil {
+			panic(err)
+		}
+		log.Print("DONE")
+		return c.Status(200).JSON(resp)
+	})
 	app.Get("/advancedStats/:demoName", func(c fiber.Ctx) error {
 		path := downloaded + "/" + c.Params("demoName")
 		file, _ := os.Open(path)
@@ -103,8 +165,10 @@ func main() {
 		defer p.Close()
 		defer file.Close()
 		var TeamStats [2]Team
+
 		lrth := false
 		catch := true
+
 		// start := false
 		p.RegisterEventHandler(func(e events.MatchStartedChanged) {
 			GS := p.GameState()
@@ -113,6 +177,7 @@ func main() {
 			// start = true
 			if GS.GamePhase() == common.GamePhaseStartGamePhase {
 				log.Print("DEBUG MATCH STARTED")
+
 				for _, player := range tside.Members() {
 					team1Name := tside.ClanName()
 					if team1Name == "" {
@@ -174,7 +239,7 @@ func main() {
 		// Included the following 3 to help debug why trackers weren't working.
 		p.RegisterEventHandler(func(h events.TeamSideSwitch) {
 			lrth = false
-			log.Print("SIDES HAVE SWITCHED")
+			// log.Print("SIDES HAVE SWITCHED")
 			temp := TeamStats[0].ID
 			TeamStats[0].ID = TeamStats[1].ID
 			TeamStats[1].ID = temp
@@ -185,7 +250,7 @@ func main() {
 			lrth = true
 		})
 		p.RegisterEventHandler(func(r events.RoundEnd) {
-			log.Print("ROUND ENDED")
+			// log.Print("ROUND ENDED")
 			if lrth {
 				catch = false
 			}
@@ -205,7 +270,6 @@ func main() {
 					p.Stats.Kills++
 					TeamStats[1].PlayingPlayers[killer.Name] = p
 				}
-				log.Printf("%s got a kill from Team %s %v", killer.Name, team.ClanName(), team.ID())
 			}
 			if asssiter != nil {
 				team := asssiter.TeamState

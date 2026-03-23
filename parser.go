@@ -1,42 +1,40 @@
 package main
 
 import (
-	events "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
-	// meta "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/metadata"
-	// metadata "github.com/markus-wa/demoinfocs-golang/metadata"
-	// "github.com/markus-wa/demoinfocs-golang/common"
+	"database/sql"
+	"fmt"
 	"log"
+
+	// Import the MariaDB-compatible driver anonymously
+	_ "github.com/go-sql-driver/mysql"
 )
 
-func gameStart(game events.MatchStart, Map string) {
+func main() {
+	// Define connection parameters
+	dbUser := "carlos"
+	dbPassword := "herrera"
+	dbHost := "127.0.0.1"
+	dbPort := "3144" // Default MariaDB port
+	dbName := "demos"
 
-	log.Printf("Game has Started!")
+	// Format the Data Source Name (DSN)
+	// The general format is: "user:password@tcp(host:port)/dbname"
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", dbUser, dbPassword, dbHost, dbPort, dbName)
+
+	// Open a database handle (a connection pool is managed internally)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatalf("Error opening database: %v", err)
+	}
+	defer db.Close() // Ensure the database connection is closed when the main function exits
+
+	// Test the connection to the database
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Error connecting to the database: %v", err)
+	}
+
+	fmt.Println("Successfully connected to MariaDB!")
+
+	// Now you can perform database operations (CRUD)
+	// Example: Query data, insert rows, etc.
 }
-func scoreChange(score events.ScoreUpdated) {
-	// var score string
-	team1 := score.TeamState
-	team2 := score.TeamState.Opponent
-
-	log.Printf("%q %v - %v %q", team1.ClanName(), team1.Score(),
-		team2.Score(), team2.ClanName())
-
-}
-
-// func main() {
-// 	file, err := os.Open("./furvitm4.dem")
-// 	p := dem.NewParser(file)
-// 	defer p.Close()
-// 	defer file.Close()
-// 	p.RegisterEventHandler(onKill)
-// 	p.RegisterEventHandler(gameStart)
-// 	p.RegisterEventHandler(scoreChange)
-// 	pf, err := p.ParseNextFrame()
-// 	for pf {
-// 		// GS := p.GameState()
-
-// 		pf, err = p.ParseNextFrame()
-// 	}
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// }

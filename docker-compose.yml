@@ -1,0 +1,23 @@
+services:
+  db:
+    image: mariadb:latest
+    container_name: demo-container
+    restart: always
+    environment:
+      # Sets the 'root' user password
+      MARIADB_ROOT_PASSWORD: root_password_here
+      # Automatically creates this database on startup
+      MARIADB_DATABASE: demos
+      # Automatically creates this user
+      MARIADB_USER: carlos
+      # Sets the password for the 'carlos' user
+      MARIADB_PASSWORD: root_password_here
+    ports:
+      # Map Host Port 3144 to Container Port 3306
+      - "3144:3306"
+    volumes:
+      # Persists your data even if the container is deleted
+      - mariadb_data:/var/lib/mysql
+
+volumes:
+  mariadb_data:

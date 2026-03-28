@@ -18,6 +18,6 @@ services:
     volumes:
       # Persists your data even if the container is deleted
       - mariadb_data:/var/lib/mysql
-
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 volumes:
   mariadb_data:

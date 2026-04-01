@@ -1,3 +1,4 @@
 *.dem
 uploads/*
 !uploads/.gitkeep
+.env

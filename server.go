@@ -1,66 +1,64 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
+	"time"
+
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/golang/geo/r3"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/gofiber/template/html/v2"
-	"github.com/golang/geo/r3"
+	"github.com/joho/godotenv"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
-	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
-	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
 )
 
 // var downloaded string = "/Users/carlosherrera/Documents/CS2DEMOS"
 // var downloaded string = "/workspaces/GoCs/uploads"
-var downloaded string = "/home/carlos/Documents/Gitstiff/GoCs/uploads"
 
-type BaseDemo struct {
-	FileName string `json:"filename"`
-	ModDate  string `json:"date"`
-	FileSize string `json:"filesize"`
-	Map      string `json:"map"`
-}
+var DB *sql.DB
 
-type PlayerStats struct {
-	Kills   int `json:"kills"`
-	Deaths  int `json:"deaths"`
-	Assists int `json:"assists"`
-}
+func Connect() {
+	// Use your environment variables here!
 
-type Player struct {
-	Name  string      `json:"name"`
-	ID    int64       `json:"ID"`
-	Stats PlayerStats `json:"stats"`
-}
-type Team struct {
-	ID             int               `json:"ID"`
-	ClanName       string            `json:"Clanname"`
-	EndScore       int               `json:"Endscore"`
-	TScore         int               `json:"TScore"`
-	CTScore        int               `json:"CTScore"`
-	StartingSide   common.Team       `json:"startside"`
-	PlayingPlayers map[string]Player `json:"Playing"`
-	inited         bool
-}
-type InGame struct {
-	Position []r3.Vector `json:"Positions"`
-}
-type Match struct {
-	GameRounds map[int]Rounds `json:"Rounds"`
-}
-type Rounds struct {
-	Players map[string]InGame `json:"InGamePlayers"`
+	dbUser := os.Getenv("DB_USER")
+	dbPassword := os.Getenv("DB_PASSWORD")
+	// log.Printf("%s %s", dbUser, dbPassword)
+	dbHost := "127.0.0.1"
+	dbPort := "3144" // Default MariaDB port
+	dbName := os.Getenv("DB_NAME")
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", dbUser, dbPassword, dbHost, dbPort, dbName)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Important: Configure the pool
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(25)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	if err := db.Ping(); err != nil {
+		log.Fatal(err)
+	}
+
+	DB = db
 }
 
 func main() {
 	engine := html.New("./views", ".html")
-
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("No .env file found, using system environment variables")
+	}
+	Connect()
+	defer DB.Close()
 	app := fiber.New(fiber.Config{
 		// Provide a template engine
 		BodyLimit: 1 * 1024 * 1024 * 1024,
@@ -76,261 +74,216 @@ func main() {
 	app.Use("/static", static.New("./static"))
 	port := ":4000"
 	app.Get("/AllDemos", func(c fiber.Ctx) error {
-		entries, err := os.ReadDir(downloaded)
+		entries, err := os.ReadDir(getDemoPath())
 		if err != nil {
 			log.Fatal(err)
 			return c.Status(500).JSON(fiber.Map{"error": "Could not read directory"})
 		}
 		file := []BaseDemo{}
 		for _, e := range entries {
-			path := downloaded + "/" + e.Name()
-			demofile, _ := os.Open(path)
-			p := dem.NewParser(demofile)
-			defer p.Close()
-			defer demofile.Close()
-			var GameMap string
-			p.RegisterNetMessageHandler(func(msg *msg.CSVCMsg_ServerInfo) {
-				GameMap = *msg.MapName
-				p.Cancel()
-			})
-			p.ParseToEnd()
-			info, _ := e.Info()
-			infoSend := BaseDemo{
-				FileName: e.Name(),
-				ModDate:  info.ModTime().Local().String(),
-				FileSize: fmt.Sprintf("%.2f", float64(info.Size())/1024.0/1024.0*1.00),
-				Map:      GameMap,
+			if lastthree := e.Name()[len(e.Name())-3:]; lastthree != "dem" {
+				continue
 			}
-			file = append(file, infoSend)
+			var row BaseDemo
+			if err := DB.QueryRow("SELECT DEMO_NAME, SAVED_DATE, MAP FROM MATCHES WHERE DEMO_NAME = ?", e.Name()).Scan(&row.FileName, &row.ModDate, &row.Map); err != nil {
+				if err == sql.ErrNoRows {
+					path := getDemoPath() + e.Name()
+					demofile, _ := os.Open(path)
+					p := dem.NewParser(demofile)
+					defer p.Close()
+					defer demofile.Close()
+					var GameMap string
+					p.RegisterNetMessageHandler(func(msg *msg.CSVCMsg_ServerInfo) {
+						GameMap = *msg.MapName
+						p.Cancel()
+					})
+					p.ParseToEnd()
+					info, _ := e.Info()
+					infoSend := BaseDemo{
+						FileName: e.Name(),
+						ModDate:  info.ModTime().Local().String(),
+						Map:      GameMap,
+					}
+					file = append(file, infoSend)
+				}
+			} else {
+				file = append(file, row)
+			}
 
 		}
 		return c.Status(200).JSON(file)
 	})
 
 	app.Get("/2DPlayback/:demoName", func(c fiber.Ctx) error {
-		path := downloaded + "/" + c.Params("demoName")
-		file, _ := os.Open(path)
-		p := dem.NewParser(file)
-		defer p.Close()
-		defer file.Close()
-		match := make(map[int]Rounds)
-		round := make(map[string]InGame)
-		roundCount := 1
-		p.RegisterEventHandler(func(r events.RoundEnd) {
-			match[roundCount] = Rounds{
-				Players: round,
+		var matchid, parsed2d, rounds int
+
+		if err := DB.QueryRow("SELECT MATCHID, PARSED_2D, (TEAM_A_FINAL_SCORE+ TEAM_B_FINAL_SCORE) as ROUND_TOTAL FROM MATCHES WHERE DEMO_NAME = ?", c.Params("demoName")).Scan(&matchid, &parsed2d, &rounds); err != nil {
+			if err == sql.ErrNoRows {
+				// Match has not been parsed before. So we add it to the matches table and then add the stats
+				parse_demo_stats(c.Params("demoName"))
+			} else {
+				panic(err)
 			}
-			roundCount += 1
-		})
-		resp := Match{
-			GameRounds: match,
-		}
-		p.RegisterEventHandler(func(r events.RoundEnd) {
-			// log.Print("ROUND ENDED")
-			match[roundCount] = Rounds{
-				Players: round,
-			}
-			roundCount += 1
-		})
-		pf, err := p.ParseNextFrame()
-		for pf {
-			GS := p.GameState()
-			players := GS.Participants().Playing()
-			for _, player := range players {
-				pos := player.Position()
-				if val, ok := round[player.Name]; ok {
-					oldLs := val.Position
-					val.Position = append(oldLs, pos)
-					round[player.Name] = val
-				} else {
-					positions := []r3.Vector{pos}
-					start := InGame{
-						Position: positions,
+		} else {
+			if (parsed2d) == 1 {
+				var me MatchEvents
+
+				me.RoundPositions = make(map[int]RoundEvents)
+
+				query := `
+						SELECT p.PLAYERID, p.PLAYERNAME, re.XPOS, re.YPOS, re.ZPOS, re.TICK 
+						from ROUND_EVENTS as re 
+						JOIN PLAYERS p on p.PLAYERID = re.PLAYERID 
+						WHERE MATCHID = ? AND re.ROUND_NO = ?
+						ORDER BY re.TICK ASC
+					`
+				for r := range rounds + 1 {
+					if r == 0 {
+						continue
 					}
-					round[player.Name] = start
+					var RE RoundEvents
+					RE.PlayerPositions = make(map[int64][]PlayerPositions)
+					RE.PlayerNames = make(map[int64]string)
+					rows, err := DB.Query(query, matchid, r)
+					if err != nil {
+						panic(err)
+					}
+					for rows.Next() {
+						var Name string
+						var tick, x, y, z int
+						var playerid int64
+						rows.Scan(&playerid, &Name, &x, &y, &z, &tick)
+						RE.Tick = tick
+						position := r3.Vector{X: float64(x), Y: float64(y), Z: float64(z)}
+						fmt.Printf("Tick:%v", tick)
+						if _, ok := RE.PlayerNames[playerid]; !ok {
+							RE.PlayerNames[playerid] = Name
+						}
+						if len(RE.PlayerPositions[playerid]) == 0 {
+							RE.PlayerPositions[playerid] = []PlayerPositions{
+								{Position: position},
+							}
+						} else {
+							RE.PlayerPositions[playerid] = append(RE.PlayerPositions[playerid], PlayerPositions{Position: position})
+						}
+					}
+					defer rows.Close()
+					me.RoundPositions[r] = RE
 				}
+
+				// fmt.Printf("Out:%v", me)
+				return c.Status(200).JSON(me)
 			}
-			pf, err = p.ParseNextFrame()
+
 		}
-		if err != nil {
-			panic(err)
-		}
-		log.Print("DONE")
-		return c.Status(200).JSON(resp)
+		return c.Status(200).JSON("")
 	})
 	app.Get("/advancedStats/:demoName", func(c fiber.Ctx) error {
-		path := downloaded + "/" + c.Params("demoName")
-		file, _ := os.Open(path)
-		p := dem.NewParser(file)
-		defer p.Close()
-		defer file.Close()
-		var TeamStats [2]Team
+		demo := c.Params("demoName")
+		var row BaseDemo
+		if err := DB.QueryRow("SELECT DEMO_NAME, MAP, MATCHID FROM MATCHES WHERE DEMO_NAME = ?", demo).Scan(
+			&row.FileName, &row.Map, &row.ID); err != nil {
+			if err == sql.ErrNoRows {
+				// Match has not been parsed before. So we add it to the matches table and then add the stats
+				demo_stats := parse_demo_stats(demo)
+				return c.Status(200).JSON(demo_stats.TeamStats)
+			} else {
+				panic(err)
+			}
+		} else {
+			// log.Printf("File found in DB. MATCH ID: %v", row.ID)
+			query := `
+				SELECT 
+					m.TEAM_A_NAME,
+					m.TEAM_A_T_SCORE,
+					m.TEAM_A_CT_SCORE,
+					m.TEAM_A_FINAL_SCORE,
+					m.TEAM_B_T_SCORE,
+					m.TEAM_B_CT_SCORE,
+					m.TEAM_B_FINAL_SCORE,
+					p.TEAMNAME,
+					p.PLAYERNAME,
+					p.PLAYERID,
+					ms.TOTAL_KILLS,
+					ms.TOTAL_ASSISTS,
+					ms.TOTAL_DEATHS
+				FROM MATCHES m
+				JOIN MATCH_STATS ms ON m.MATCHID = ms.MATCHID
+				JOIN PLAYERS p ON ms.PLAYERID = p.PLAYERID
+				WHERE m.MATCHID = ?
+				ORDER BY p.TEAMNAME, ms.TOTAL_KILLS DESC`
+			rows, err := DB.Query(query, row.ID)
+			if err != nil {
+				panic(err)
+			}
+			var stats [2]Team
+			for rows.Next() {
+				var teamA string
+				var teamName string
+				var playerName string
+				var playerID int64
+				var kills int
+				var assists int
+				var deaths int
+				var A_T_SCORE int
+				var A_CT_SCORE int
+				var A_FINAL_SCORE int
+				var B_T_SCORE int
+				var B_CT_SCORE int
+				var B_FINAL_SCORE int
+				rows.Scan(
+					&teamA,
+					&A_T_SCORE, &A_CT_SCORE, &A_FINAL_SCORE,
+					&B_T_SCORE, &B_CT_SCORE, &B_FINAL_SCORE,
+					&teamName, &playerName, &playerID, &kills, &assists, &deaths)
 
-		lrth := false
-		catch := true
-
-		// start := false
-		p.RegisterEventHandler(func(e events.MatchStartedChanged) {
-			GS := p.GameState()
-			ctside := GS.TeamCounterTerrorists()
-			tside := GS.TeamTerrorists()
-			// start = true
-			if GS.GamePhase() == common.GamePhaseStartGamePhase {
-				log.Print("DEBUG MATCH STARTED")
-
-				for _, player := range tside.Members() {
-					team1Name := tside.ClanName()
-					if team1Name == "" {
-						team1Name = "Team 1"
+				if teamName == teamA {
+					if !stats[0].inited {
+						stats[0].ClanName = teamName
+						stats[0].ID = 1
+						stats[0].inited = true
+						stats[0].EndScore = A_FINAL_SCORE
+						stats[0].CTScore = A_CT_SCORE
+						stats[0].TScore = A_T_SCORE
+						stats[0].PlayingPlayers = make(map[string]Player)
 					}
-					if !TeamStats[0].inited {
-						TeamStats[0] = Team{
-							ID:             tside.ID(),
-							EndScore:       -1,
-							CTScore:        0,
-							TScore:         0,
-							ClanName:       team1Name,
-							PlayingPlayers: make(map[string]Player),
-							inited:         true,
-							StartingSide:   common.TeamTerrorists,
-						}
-					}
-					TeamStats[0].PlayingPlayers[player.Name] = Player{
-						Name: player.Name,
-						ID:   int64(player.SteamID64),
+
+					player := Player{
+						Name: playerName,
+						ID:   playerID,
 						Stats: PlayerStats{
-							Kills:   0,
-							Assists: 0,
-							Deaths:  0,
+							Kills:   kills,
+							Deaths:  deaths,
+							Assists: assists,
 						},
 					}
-				}
-				for _, player := range ctside.Members() {
-					team1Name := ctside.ClanName()
-					if team1Name == "" {
-						team1Name = "Team 2"
+					stats[0].PlayingPlayers[playerName] = player
+				} else {
+					if !stats[1].inited {
+						stats[1].ClanName = teamName
+						stats[1].ID = 1
+						stats[1].inited = true
+						stats[1].EndScore = B_FINAL_SCORE
+						stats[1].CTScore = B_CT_SCORE
+						stats[1].TScore = B_T_SCORE
+						stats[1].PlayingPlayers = make(map[string]Player)
 					}
-					if !TeamStats[1].inited {
-						TeamStats[1] = Team{
-							ID:             ctside.ID(),
-							EndScore:       -1,
-							CTScore:        0,
-							TScore:         0,
-							ClanName:       team1Name,
-							PlayingPlayers: make(map[string]Player),
-							inited:         true,
-							StartingSide:   common.TeamCounterTerrorists,
-						}
-					}
-					TeamStats[1].PlayingPlayers[player.Name] = Player{
-						Name: player.Name,
-						ID:   int64(player.SteamID64),
+					player := Player{
+						Name: playerName,
+						ID:   playerID,
 						Stats: PlayerStats{
-							Kills:   0,
-							Assists: 0,
-							Deaths:  0,
+							Kills:   kills,
+							Deaths:  deaths,
+							Assists: assists,
 						},
 					}
-
+					stats[1].PlayingPlayers[playerName] = player
 				}
 			}
-		})
-
-		// Included the following 3 to help debug why trackers weren't working.
-		p.RegisterEventHandler(func(h events.TeamSideSwitch) {
-			lrth = false
-			// log.Print("SIDES HAVE SWITCHED")
-			temp := TeamStats[0].ID
-			TeamStats[0].ID = TeamStats[1].ID
-			TeamStats[1].ID = temp
-			catch = true
-		})
-		p.RegisterEventHandler(func(lr events.AnnouncementLastRoundHalf) {
-			// log.Print("LAST ROUND TILL HALF")
-			lrth = true
-		})
-		p.RegisterEventHandler(func(r events.RoundEnd) {
-			// log.Print("ROUND ENDED")
-			if lrth {
-				catch = false
-			}
-		})
-		p.RegisterEventHandler(func(kill events.Kill) {
-			killer := kill.Killer
-			asssiter := kill.Assister
-			victim := kill.Victim
-			if killer != nil {
-				team := killer.TeamState
-				if team.ID() == TeamStats[0].ID {
-					p, _ := TeamStats[0].PlayingPlayers[killer.Name]
-					p.Stats.Kills++
-					TeamStats[0].PlayingPlayers[killer.Name] = p
-				} else {
-					p, _ := TeamStats[1].PlayingPlayers[killer.Name]
-					p.Stats.Kills++
-					TeamStats[1].PlayingPlayers[killer.Name] = p
-				}
-			}
-			if asssiter != nil {
-				team := asssiter.TeamState
-				if team.ID() == TeamStats[0].ID {
-					p, _ := TeamStats[0].PlayingPlayers[asssiter.Name]
-					p.Stats.Assists++
-					TeamStats[0].PlayingPlayers[asssiter.Name] = p
-				} else {
-					p, _ := TeamStats[1].PlayingPlayers[asssiter.Name]
-					p.Stats.Assists++
-					TeamStats[1].PlayingPlayers[asssiter.Name] = p
-				}
-			}
-			if victim != nil {
-				team := victim.TeamState
-				if team.ID() == TeamStats[0].ID {
-					p, _ := TeamStats[0].PlayingPlayers[victim.Name]
-					p.Stats.Deaths++
-					TeamStats[0].PlayingPlayers[victim.Name] = p
-				} else {
-					p, _ := TeamStats[1].PlayingPlayers[victim.Name]
-					p.Stats.Deaths++
-					TeamStats[1].PlayingPlayers[victim.Name] = p
-				}
-			}
-		})
-		p.RegisterEventHandler(func(score events.ScoreUpdated) {
-			team1 := score.TeamState
-			team2 := score.TeamState.Opponent
-			log.Printf("%v %s %v - %v %s %v", team1.ID(), team1.ClanName(), team1.Score(),
-				team2.Score(), team2.ClanName(), team2.ID())
-
-			// Check to make sure it isn't null
-			if TeamStats[0].inited && catch {
-				// team1 (non opp) will always have the score incremented
-				// log.Printf("%v", team1.Team())
-
-				if TeamStats[0].ID == team1.ID() {
-					TeamStats[0].EndScore = score.NewScore
-					if team1.Team() == common.TeamCounterTerrorists {
-						TeamStats[0].CTScore += 1
-					} else {
-						TeamStats[0].TScore += 1
-					}
-				} else {
-					TeamStats[1].EndScore = score.NewScore
-					if team1.Team() == common.TeamCounterTerrorists {
-						TeamStats[1].CTScore++
-					} else {
-						TeamStats[1].TScore++
-					}
-				}
-				// log.Printf("DEBUG %v %s CT: %v T:%v", TeamStats[0].ID, TeamStats[0].ClanName, TeamStats[0].CTScore, TeamStats[0].TScore)
-				// log.Printf("DEBUG %v %s CT: %v T:%v", TeamStats[1].ID, TeamStats[1].ClanName, TeamStats[1].CTScore, TeamStats[1].TScore)
-			}
-		})
-		err := p.ParseToEnd()
-		if err != nil {
-			panic(err)
+			defer rows.Close()
+			return c.Status(200).JSON(stats)
 		}
-		return c.Status(200).JSON(TeamStats)
+
 	})
 	app.Post("/testFile", func(c fiber.Ctx) error {
 		file, err := c.FormFile("myfile")

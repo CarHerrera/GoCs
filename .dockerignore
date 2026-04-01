@@ -1,0 +1,6 @@
+# .dockerignore
+.git
+*.dem
+uploads/
+bin/
+obj/

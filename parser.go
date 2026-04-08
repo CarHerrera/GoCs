@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/golang/geo/r3"
+	ex "github.com/markus-wa/demoinfocs-golang/v5/examples"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
@@ -15,10 +15,10 @@ import (
 )
 
 type BaseDemo struct {
-	FileName  string  `json:"filename"`
-	ModDate   string  `json:"date"`
-	FileSize  string  `json:"filesize"`
-	Map       string  `json:"map"`
+	FileName  string  `json:"filename,string"`
+	ModDate   string  `json:"date,string"`
+	FileSize  string  `json:"filesize,string"`
+	Map       string  `json:"map,string"`
 	TeamStats [2]Team `json:"team_stats"`
 	ID        int
 }
@@ -30,14 +30,15 @@ type PlayerStats struct {
 }
 type MatchEvents struct {
 	RoundPositions map[int]RoundEvents `json:"rounds"`
+	MapMeta        ex.Map              `json:"map"`
 }
 type RoundEvents struct {
-	Tick            int                         `json:"tick"`
-	PlayerPositions map[int64][]PlayerPositions `json:"player_positions"`
-	PlayerNames     map[int64]string            `json:"player_names"`
+	PlayerPositions map[int]map[int64]r3.Vector `json:"player_positions"`
+	PlayerNames     map[int64]PlayerInfo        `json:"player_info"`
 }
-type PlayerPositions struct {
-	Position r3.Vector `json:"position"`
+type PlayerInfo struct {
+	Name string `json:"name"`
+	Side int    `json:"side"`
 }
 type Player struct {
 	Name  string      `json:"name"`
@@ -73,7 +74,7 @@ func getDemoPath() string {
 	return os.Getenv("DEMO_PATH")
 }
 
-func parse_demo_stats(fileName string) BaseDemo {
+func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 	demo := getDemoPath() + fileName
 	file, err := os.Open(demo)
 	if err != nil {
@@ -87,10 +88,12 @@ func parse_demo_stats(fileName string) BaseDemo {
 	p := dem.NewParser(file)
 	defer p.Close()
 	var GameMap string
+	live := false
 	p.RegisterNetMessageHandler(func(msg *msg.CSVCMsg_ServerInfo) {
 		GameMap = *msg.MapName
 	})
 	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
+		live = true
 		GS := p.GameState()
 		ctside := GS.TeamCounterTerrorists()
 		tside := GS.TeamTerrorists()
@@ -193,6 +196,9 @@ func parse_demo_stats(fileName string) BaseDemo {
 		}
 	})
 	p.RegisterEventHandler(func(kill events.Kill) {
+		if !live {
+			return
+		}
 		killer := kill.Killer
 		asssiter := kill.Assister
 		victim := kill.Victim
@@ -263,19 +269,20 @@ func parse_demo_stats(fileName string) BaseDemo {
 	if err != nil {
 		panic(err)
 	}
-	time := fmt.Sprintf("%v", info.ModTime().Format(time.DateOnly))
-	q, err := DB.Exec("INSERT INTO MATCHES (DEMO_NAME,SAVED_DATE,PARSED_STATS,PARSED_2D,"+
-		"TEAM_A_NAME,TEAM_A_T_SCORE, TEAM_A_CT_SCORE, TEAM_A_FINAL_SCORE,"+
-		"TEAM_B_NAME,TEAM_B_T_SCORE, TEAM_B_CT_SCORE, TEAM_B_FINAL_SCORE, MAP)"+
-		"VALUES (?,?,1,0,?,?,?,?,?,?,?,?,?)", info.Name(), time,
-		TeamStats[0].ClanName, TeamStats[0].TScore, TeamStats[0].CTScore, TeamStats[0].EndScore,
-		TeamStats[1].ClanName, TeamStats[1].TScore, TeamStats[1].CTScore, TeamStats[1].EndScore,
-		GameMap,
-	)
+	_, err = DB.Exec(`
+		UPDATE MATCHES 
+			SET
+				PARSED_STATS = 1,
+				TEAM_A_NAME = ?,TEAM_A_T_SCORE = ?, TEAM_A_CT_SCORE = ?, TEAM_A_FINAL_SCORE = ?,
+				TEAM_B_NAME = ?,TEAM_B_T_SCORE = ?, TEAM_B_CT_SCORE = ?, TEAM_B_FINAL_SCORE = ?, MAP = ?
+			WHERE 
+				MATCHID = ?
+	`, TeamStats[0].ClanName, TeamStats[0].TScore, TeamStats[0].CTScore, TeamStats[0].EndScore,
+		TeamStats[1].ClanName, TeamStats[1].TScore, TeamStats[1].CTScore, TeamStats[1].EndScore, GameMap, MATCHID)
+
 	if err != nil {
 		panic(err)
 	}
-	lastId, err := q.LastInsertId()
 	for i, team := range TeamStats {
 		for _, player := range team.PlayingPlayers {
 			var steamid int
@@ -290,7 +297,7 @@ func parse_demo_stats(fileName string) BaseDemo {
 				}
 			}
 
-			_, err := DB.Exec("INSERT INTO MATCH_STATS (MATCHID,PLAYERID,TOTAL_KILLS,TOTAL_DEATHS,TOTAL_ASSISTS) VALUES (?,?,?,?,?)", lastId, player.ID, player.Stats.Kills, player.Stats.Deaths, player.Stats.Assists)
+			_, err := DB.Exec("INSERT INTO MATCH_STATS (MATCHID,PLAYERID,TOTAL_KILLS,TOTAL_DEATHS,TOTAL_ASSISTS) VALUES (?,?,?,?,?)", MATCHID, player.ID, player.Stats.Kills, player.Stats.Deaths, player.Stats.Assists)
 			if err != nil {
 				panic(err)
 			}
@@ -309,7 +316,7 @@ func parse_demo_stats(fileName string) BaseDemo {
 	return infoSend
 }
 
-func Parse2D(filename string) {
+func Parse2D(filename string) MatchEvents {
 	demo := getDemoPath() + filename
 	file, err := os.Open(demo)
 	if err != nil {
@@ -319,13 +326,15 @@ func Parse2D(filename string) {
 	defer p.Close()
 	defer file.Close()
 	var matchid int
-	if err := DB.QueryRow("SELECT MATCHID FROM MATCHES WHERE DEMO_NAME = ?", filename).Scan(&matchid); err != nil {
+	var matchmap string
+	if err := DB.QueryRow("SELECT MATCHID, MAP FROM MATCHES WHERE DEMO_NAME = ?", filename).Scan(&matchid, &matchmap); err != nil {
 		panic(err)
 	}
 	const batchSize = 5000
 	var buffer []posEntry
 	batchChan := make(chan []posEntry, 100)
 	var wg sync.WaitGroup
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -333,24 +342,45 @@ func Parse2D(filename string) {
 			flushToDB(DB, batch) // Your helper function with the transaction
 		}
 	}()
+	var playback MatchEvents
+	playback.RoundPositions = make(map[int]RoundEvents)
 	live := false
 	rounds := 0
 	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
 		live = true
+		rounds = 1
 	})
 	p.RegisterEventHandler(func(events.FrameDone) {
 		if live {
 			gs := p.GameState()
 			tick := gs.IngameTick()
-			if tick%16 != 0 {
+			if tick%8 != 0 {
 				return
 			}
 			for _, player := range gs.Participants().Playing() {
 				pos := player.Position()
 				if player.IsAlive() {
+
 					buffer = append(buffer, posEntry{
 						matchid, rounds, tick, player.SteamID64, pos.X, pos.Y, pos.Z,
 					})
+					// Check to see if player is added
+					position := r3.Vector{X: pos.X, Y: pos.Y, Z: pos.Z}
+					if _, ok := playback.RoundPositions[rounds].PlayerNames[int64(player.SteamID64)]; !ok {
+						playback.RoundPositions[rounds].PlayerNames[int64(player.SteamID64)] = PlayerInfo{Name: player.Name, Side: int(player.GetTeam())}
+					}
+
+					if len(playback.RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+						playback.RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]r3.Vector)
+						playback.RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = position
+					} else {
+						playback.RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = position
+					}
+					// if _, ok := playback.RoundPositions[rounds].PlayerPositions[tick]; !ok {
+
+					// } else {
+					// 	playback.RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = r2.Point{X: x, Y: y}
+					// }
 				}
 
 			}
@@ -359,7 +389,12 @@ func Parse2D(filename string) {
 
 	})
 	p.RegisterEventHandler(func(e events.RoundStart) {
-		rounds += 1
+
+		// Creating connecting tables
+		playback.RoundPositions[rounds] = RoundEvents{
+			PlayerPositions: make(map[int]map[int64]r3.Vector),
+			PlayerNames:     make(map[int64]PlayerInfo),
+		}
 		gs := p.GameState()
 		_, err := DB.Exec("INSERT IGNORE INTO ROUNDS (MATCHID, ROUND_NO) VALUES (?,?)", matchid, rounds)
 
@@ -367,19 +402,19 @@ func Parse2D(filename string) {
 			panic(err)
 		}
 		for _, players := range gs.Participants().Playing() {
-			_, err = DB.Exec("INSERT IGNORE INTO ROUND_PARTICIPANTS (MATCHID, ROUND_NO, PLAYERID) VALUES (?,?,?)", matchid, rounds, players.SteamID64)
+			_, err = DB.Exec("INSERT IGNORE INTO ROUND_PARTICIPANTS (MATCHID, ROUND_NO, PLAYERID, SIDE) VALUES (?,?,?,?)", matchid, rounds, players.SteamID64, int(players.GetTeam()))
 			if err != nil {
 				panic(err)
 			}
 		}
 	})
-	p.RegisterEventHandler(func(e events.RoundEnd) {
+	p.RegisterEventHandler(func(e events.RoundEndOfficial) {
 		if len(buffer) == 0 {
 			return
 		}
 
 		fmt.Printf("Round %d ended. Flushing %d rows to DB...\n", rounds, len(buffer))
-
+		rounds += 1
 		// IMPORTANT: Clear the buffer for the next round
 		batchToSend := make([]posEntry, len(buffer))
 		copy(batchToSend, buffer)
@@ -403,6 +438,8 @@ func Parse2D(filename string) {
 	if err != nil {
 		panic(err)
 	}
+	playback.MapMeta = ex.GetMapMetadata(matchmap)
+	return playback
 }
 func flushToDB(db *sql.DB, entries []posEntry) {
 	tx, err := db.Begin()

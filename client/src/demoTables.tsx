@@ -39,8 +39,20 @@ function DemoTable() {
         return () => { ignore = true}
     }, [])
     const tableRows = files.map((x,i) => {
-        return <tr key={i}><td>{x.filename}</td><td>{x.date.substring(0,11)}</td><td>{x.filesize}MB</td><td>{x.map}</td><td>
-            <Link to={`/advancedStats?file=${x.filename}&map=${x.map}`}>Stats</Link></td></tr>
+        let file = x.filename
+        let map = x.map 
+        let date = x.date
+        if (file[0] == "\""){
+            file = x.filename.substring(1, file.length-1)
+        }
+        if (map[0] == "\""){
+            map = x.map.substring(1, map.length-1)
+        }
+        if (date[0] == "\""){
+            date = x.date.substring(1, date.length-1)
+        }
+        return <tr key={i}><td>{file}</td><td>{date}</td><td>{map}</td><td>
+            <Link to={`/advancedStats?file=${file}&map=${map}`}>Stats</Link></td></tr>
     })
     return <>
         <div >
@@ -49,7 +61,6 @@ function DemoTable() {
                     <tr>
                         <th>File Name</th>
                         <th>Date Uploaded</th>
-                        <th>filesize</th>
                         <th>Map</th>
                         <th>Advanved Stats</th>
                     </tr>

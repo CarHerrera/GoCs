@@ -1,5 +1,5 @@
 import { useSearchParams } from "react-router-dom";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, act } from 'react';
 import './css/stats.css'
 import DemoPlayback from "./DemoPlayback";
 interface Stats{
@@ -39,6 +39,9 @@ function NavBar({setActive}:{setActive :React.Dispatch<React.SetStateAction<numb
 }
 
 function Overview ({stats}:{stats: Stats[]}){
+    if (!stats || stats.length < 2) {
+        return <div className="loading">Loading match stats...</div>;
+    }
     return (
         <div className="stats">
                 <div>
@@ -52,13 +55,10 @@ function Overview ({stats}:{stats: Stats[]}){
                             <td>Deaths</td>
                             </tr>
                         </thead>
-                        <tbody>
-                            {   stats.length !=0 ?
-                                Object.entries(stats[0].Playing).map(([name, player], i) => {
+                        <tbody>{  
+                                    Object.entries(stats[0]?.Playing).map(([name, player], i) => {
                                     return <tr key ={i}><td>{name}</td><td>{player.stats.kills}</td><td>{player.stats.assists}</td><td>{player.stats.deaths}</td></tr>
-                                }) : ""
-                            }
-                        </tbody>
+                                })}</tbody>
                     </table>
                 </div>
                 <div>
@@ -72,13 +72,11 @@ function Overview ({stats}:{stats: Stats[]}){
                             <td>Deaths</td>
                             </tr>
                         </thead>
-                        <tbody>
-                            {   stats.length !=0 ?
+                        <tbody>{   stats.length !=0 ?
                                 Object.entries(stats[1].Playing).map(([name, player], i) => {
                                     return <tr key ={i}><td>{name}</td><td>{player.stats.kills}</td><td>{player.stats.assists}</td><td>{player.stats.deaths}</td></tr>
                                 }): ""
-                            }
-                        </tbody>
+                            }</tbody>
                     </table>
                 </div>
             </div>
@@ -124,22 +122,29 @@ function AdvancedStats(){
     if (activeTab == 1){
         frontPage = (<Overview stats={stats}></Overview>)
     } else if (activeTab == 4){
-        frontPage = (<DemoPlayback file={file}></DemoPlayback>)
+        frontPage = (<DemoPlayback file={file} map={map}></DemoPlayback>)
     }
 
     // console.log(searchParams)
     // Add Some Check to see if the demo has been parsed before via a SQL check
     return (<>
-        <div className="grid">
+        <div>
             <div className="header">
                 <h1>{stats.length !=0 ? stats[0].Clanname : "Team 1"} vs {stats.length !=0 ? stats[1].Clanname : "Team 2"}</h1>
                 {stats.length != 0 ? `${stats[0].Endscore} - ${stats[1].Endscore}`: ""}
                 <NavBar setActive={setActive}></NavBar>
             </div>
-            <div className="map">
-                <img style={{display:"inline"}}src={`/src/assets/overviews/${map}.jpg`}></img>
-            </div>
-            {frontPage}
+
+            {activeTab == 1 ? (
+                <div className="grid">
+                    <div className="map">
+                        <img style={{display:"inline"}}src={`/overviews/${map}.jpg`}></img>
+                    </div>
+                    {frontPage}
+                </div>
+            ) : (frontPage)
+            }
+            
         </div>
         
     </>)

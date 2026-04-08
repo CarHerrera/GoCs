@@ -8,8 +8,10 @@ import (
 
 	// Import the MariaDB-compatible driver anonymously
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/golang/geo/r3"
+	ex "github.com/markus-wa/demoinfocs-golang/v5/examples"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
 )
 
 type SQLMatch struct {
@@ -22,8 +24,8 @@ type SQLMatch struct {
 
 func TestConnect(t *testing.T) {
 	// Define connection parameters
-	dbUser := "carlos"
-	dbPassword := "herrera"
+	dbUser := ""
+	dbPassword := ""
 	dbHost := "127.0.0.1"
 	dbPort := "3144" // Default MariaDB port
 	dbName := "demos"
@@ -51,56 +53,26 @@ func TestConnect(t *testing.T) {
 		t.Error("Error opening file")
 	}
 	p := dem.NewParser(file)
+	var (
+		mapMetadata ex.Map
+		// mapRadarImg image.Image
+	)
 	defer p.Close()
 	defer file.Close()
-	var matchid, parsed2d, rounds int
-	if err := db.QueryRow("SELECT MATCHID, PARSED_2D, (TEAM_A_FINAL_SCORE+ TEAM_B_FINAL_SCORE) as ROUND_TOTAL FROM MATCHES WHERE DEMO_NAME = ?", fileName).Scan(&matchid, &parsed2d, &rounds); err != nil {
-		t.Errorf("Error with DB %v", err)
-	}
-	if parsed2d == 1 {
-		var me MatchEvents
+	p.RegisterNetMessageHandler(func(msg *msg.CSVCMsg_ServerInfo) {
+		// Get metadata for the map that the game was played on for coordinate translations
+		mapMetadata = ex.GetMapMetadata(msg.GetMapName())
 
-		me.RoundPositions = make(map[int]RoundEvents)
+		// Load map overview image
+		// mapRadarImg = ex.GetMapRadar(msg.GetMapName())
+	})
 
-		for r := range rounds + 1 {
-			if r == 0 {
-				continue
-			}
-			var RE RoundEvents
-			RE.PlayerPositions = make(map[int64][]PlayerPositions)
-			RE.PlayerNames = make(map[int64]string)
-			query := `
-				SELECT p.PLAYERID, p.PLAYERNAME, re.XPOS, re.YPOS, re.TICK 
-				from ROUND_EVENTS as re 
-				JOIN PLAYERS p on p.PLAYERID = re.PLAYERID 
-				WHERE MATCHID = ? AND re.ROUND_NO = ?
-				ORDER BY re.TICK ASC
-			`
-			rows, err := db.Query(query, matchid, r)
-			if err != nil {
-				t.Errorf("ERror: %v", err)
-			}
-			for rows.Next() {
-				var Name string
-				var tick, x, y, z int
-				var playerid int64
-				rows.Scan(&playerid, &Name, &x, &y, &z, &tick)
-				RE.Tick = tick
-				position := r3.Vector{X: float64(x), Y: float64(y), Z: float64(z)}
-				if _, ok := RE.PlayerNames[playerid]; !ok {
-					RE.PlayerNames[playerid] = Name
-				}
+	p.RegisterEventHandler(func(e events.Kill) {
+		x, y := mapMetadata.TranslateScale(e.Killer.Position().X, e.Killer.Position().Y)
+		t.Logf("Player:%s killed %s from (%v,%v)", e.Killer.Name, e.Victim.Name, x, y)
+	})
 
-				if len(RE.PlayerPositions[playerid]) == 0 {
-					RE.PlayerPositions[playerid] = []PlayerPositions{
-						{Position: position},
-					}
-				} else {
-					RE.PlayerPositions[playerid] = append(RE.PlayerPositions[playerid], PlayerPositions{Position: position})
-				}
-			}
-		}
-	}
+	p.ParseToEnd()
 	// 	log.Print("DONE")
 	// 	return c.Status(20).JSON(resp)
 }

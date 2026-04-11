@@ -2,11 +2,14 @@ import { useEffect, useState, useRef } from "react";
 import { Layer, Stage, Text, Circle, Group} from 'react-konva';
 import { URLImage } from "./URLImage";
 import Konva from "konva";
-import { stringToArray } from "konva/lib/shapes/Text";
-interface Vector {
-    X: number;
-    Y: number;
-    Z: number;
+// interface Vector {
+//     X: number;
+//     Y: number;
+//     Z: number;
+// }
+interface PlayerState {
+    vector: MapCoordinate;
+    weapon: string;
 }
 interface MapCoordinate  {
     X: number;
@@ -19,16 +22,14 @@ interface MatchEvents {
         pos_y: string,
         scale: string
     }
+    teams: Record<string, Record<string, string>>;
 }
 
 interface RoundEvents {
-    player_positions: Record<number, Record<string, Vector>>;
+    player_positions: Record<number, Record<string, PlayerState>>;
     player_info: Record<string, PlayerInformation>;
 }
-interface RoundTick {
-    round_no: number,
 
-}
 interface PlayerInformation {
     name: string;
     side: number
@@ -47,9 +48,9 @@ function DemoPlayback({file, map}:{file:String, map:String}){
         const round_begin_ticks = useRef<Map<number,number>>(new Map<number,number>());
         const tickRef = useRef(0);
         const playerRef = useRef<Map<string, Konva.Group>>(null)
-        const playbackRef = useRef<Map<number, (Map<number, Map<string, MapCoordinate>>)>>(new Map<number, (Map<number, Map<string, MapCoordinate>>)>);
+        const playbackRef = useRef<Map<number, (Map<number, Map<string, PlayerState>>)>>(new Map<number, (Map<number, Map<string, PlayerState>>)>);
         const layerRef = useRef<Konva.Layer>(null)
-
+        // const lastWep = useRef("")
         function getMap(){
             if(!playerRef.current){
                 playerRef.current = new Map();
@@ -71,7 +72,6 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                     }
                     return response.json();
                 }) .then(data => {
-                    // console.log(data)
                     return data;
                 })
             }
@@ -79,6 +79,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                 const data = await getStats();
                 if(!ignore){
                     setStats(data)
+                    // console.log(data)
                     round_begin_ticks.current = new Map<number,number>();
                 }
             }
@@ -110,7 +111,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
         let elapsed = 0;
         const anim = new Konva.Animation((frame) => {
             if (!isPlaying.playing) {return}
-            playerRef.current?.forEach((c, k, m) => {
+            playerRef.current?.forEach((c, k) => {
                 if (stats != null){
                     const oldround = stats?.rounds[round]
                     
@@ -123,7 +124,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                         tickRef.current = isPlaying.tick_no;
                     }
                     // tickRef.current += 1;
-                    if(elapsed > 100){
+                    if(elapsed > 50){
                         tickRef.current += 1;
                         elapsed = 0
                     } else {
@@ -133,12 +134,26 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                     if (playbackRef.current.get(round)?.has(tickRef.current)) {
                         const positions = playbackRef.current.get(round)!.get(tickRef.current)?.get(k)
                         c.getChildren().forEach((g) => {
+                            // Positions become null means that the player died in the server because we stopped recording them
+                            // TODO Maybe change it to an X if I can?
                             if (g.className == "Circle") {
-                                g.x(positions!.X);
-                                g.y(positions!.Y)
+                                if(positions == null){
+                                    g.x(-1000);
+                                    g.y(-1000)
+                                } else {
+                                    g.x(positions!.vector.X);
+                                    g.y(positions!.vector.Y)
+                                }
+                                
                             } else {
-                                g.x(positions!.X+5);
-                                g.y(positions!.Y-3)
+                                if(positions == null){
+                                    g.x(-1000);
+                                    g.y(-1000)
+                                } else {
+                                    g.x(positions!.vector.X+5);
+                                    g.y(positions!.vector.Y-3)
+                                }
+                                
                             }
                         })
                     }                        
@@ -170,15 +185,18 @@ function DemoPlayback({file, map}:{file:String, map:String}){
             }
             rounds.forEach(([round_no, round_ev]) => {
                 const pos = Array.from(Object.entries(round_ev.player_positions))
-                const tick_map = new Map<number, Map<string, MapCoordinate>>();
+                const tick_map = new Map<number, Map<string, PlayerState>>();
                 pos.forEach(([tick, playervec],i) => {
                     const info = Array.from(Object.entries(playervec))
-                    const player_pos = new Map<string, MapCoordinate>()
-                    info.forEach(([playerid, vector]) =>{
+                    const player_pos = new Map<string, PlayerState>()
+                    info.forEach(([playerid, state]) =>{
                         const place:MapCoordinate = {
-                            X:newX(vector.X), Y:newY(vector.Y)
+                            X:newX(state.vector.X), Y:newY(state.vector.Y)
                         }
-                        player_pos.set(playerid, place)
+                        const player_state: PlayerState = {
+                            vector: place, weapon: state.weapon
+                        }
+                        player_pos.set(playerid, player_state)
                     })
                     tick_map.set(Number(tick), player_pos)
                     if (i ==0) {
@@ -191,25 +209,42 @@ function DemoPlayback({file, map}:{file:String, map:String}){
             const player_info = Array.from(Object.entries(rounds[round-1][1].player_info))
             player_info.forEach(([playerid, playername]) => {
                 const playerpos = playbackRef.current.get(round)!.get(0)?.get(playerid)
-                playerecords.push([playerid, playername.name, playerpos!.X, playerpos!.Y, playername.side ])
+                playerecords.push([playerid, playername.name, playerpos!.vector.X, playerpos!.vector.Y, playername.side ])
             })
             
         }
-
+        console.log(stats)
     return <>
         <div className="playbackGrid" >
-            <div className="team1">
-                Team 1
-                Current Round: {round}
-            </div>
-            <div className="team2">
-                Team 2
-            </div>
+            {stats && Array.from(Object.entries(stats!.teams)).map(([teamname, players],i) => {
+                const player_names = Array.from(Object.values(players));
+                return (<>
+                        <div className={`team${i+1}`} key={i}>
+                            <h3>{teamname}</h3>
+
+                            {player_names.map((p,j) => {
+                                return <div key={j}>{p}</div>
+                            })}
+                        </div>
+                </>)
+            })}
+            {
+                stats == null &&
+                <>
+                    <div className="team1">
+                        Team 1
+                        Current Round: {round}
+                    </div>
+                    <div className="team2">
+                        Team 2
+                    </div>
+                </>
+            }
             <div className="playbackMap" ref={containerRef} >
                 <Stage width={size.width} height={size.height}>
                     <Layer ref={layerRef}>
                        <URLImage src={`/overviews/${map}.jpg`}  width={size.width} height={size.height}></URLImage>       
-                     {stats && 
+                        { stats && 
                             Array.from(Object.entries(stats!.rounds[round].player_info)).map(([playerid, playerinfo],i) => {
                                 const color = playerinfo.side == 2 ? "orange" : "blue"
                                 const pos = playbackRef.current!.get(round)!.get(0)!.get(playerid)
@@ -222,47 +257,21 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                                 return () => {map.delete(playerid)}
                                             }}>
                                         <Circle
-                                            x={pos!.X}
-                                            y={pos!.Y}
+                                            x={pos!.vector.X}
+                                            y={pos!.vector.Y}
                                             fill={color}
                                             radius={5}
                                         />
                                         <Text 
                                             text={playerinfo.name} 
-                                            x={pos!.X + 5} 
-                                            y={pos!.Y - 3} 
+                                            x={pos!.vector.X + 5} 
+                                            y={pos!.vector.Y - 3} 
                                             fill="white" 
                                             fontSize={10} 
                                         />
                                     </Group>
                                 );        
                             })
-                        // playerecords.map(([playerid, name, x,y,side], i) => {
-                        //     const color = side == 2 ? "orange" : "blue"
-                        //     return (
-                        //         <Group key={i} ref={(node) =>{
-                        //                     const map = getMap();
-                        //                     if (node != null) {
-                        //                         map.set(playerid, node)
-                        //                     }
-                        //                     return () => {map.delete(playerid)}
-                        //                 }}>
-                        //             <Circle
-                        //                 x={x}
-                        //                 y={y}
-                        //                 fill={color}
-                        //                 radius={5}
-                        //             />
-                        //             <Text 
-                        //                 text={name} 
-                        //                 x={x + 5} 
-                        //                 y={y - 3} 
-                        //                 fill="white" 
-                        //                 fontSize={10} 
-                        //             />
-                        //         </Group>
-                        //     );
-                        // })
                         } 
                         
                     </Layer>
@@ -271,7 +280,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
             
             <div className="player">
                 <button>Something</button>
-                <button onClick={() => setPlaying({...isPlaying, playing: !isPlaying.playing})}>{ !isPlaying.playing ? "Play": "Pause"}</button>
+                <button onClick={() => setPlaying({...isPlaying, playing: !isPlaying.playing})}>{ isPlaying.playing == false ? "Play": "Pause"}</button>
             </div>
             <div className="progress">
                 Progtess Bar

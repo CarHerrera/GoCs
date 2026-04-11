@@ -1,5 +1,5 @@
 import { useSearchParams } from "react-router-dom";
-import { useState, useEffect, act } from 'react';
+import { useState, useEffect } from 'react';
 import './css/stats.css'
 import DemoPlayback from "./DemoPlayback";
 interface Stats{
@@ -21,12 +21,6 @@ interface PlayerStats{
     assists: number
 }
 
-interface Rounds{
-    InGamePlayers: Record<string, Positions>
-}
-interface Positions {
-    Positions:  []
-}
 function NavBar({setActive}:{setActive :React.Dispatch<React.SetStateAction<number>>}){
     return <>
         <ul>

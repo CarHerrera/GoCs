@@ -124,15 +124,37 @@ func main() {
 	app.Get("/2DPlayback/:demoName", func(c fiber.Ctx) error {
 		var matchid, parsed2d, rounds int
 		var gamemap string
+
 		if err := DB.QueryRow("SELECT MATCHID, MAP, PARSED_2D, (TEAM_A_FINAL_SCORE+ TEAM_B_FINAL_SCORE) as ROUND_TOTAL FROM MATCHES WHERE DEMO_NAME = ?", c.Params("demoName")).Scan(&matchid, &gamemap, &parsed2d, &rounds); err != nil {
 			panic(err)
 		} else {
 			if (parsed2d) == 1 {
 				var me MatchEvents
 				// fmt.Print("HAS BEEN PARSED")
+				query := `
+				SELECT p.PLAYERNAME, p.PLAYERID, p.TEAMNAME as TEAM 
+				FROM PLAYERS as p 
+				LEFT JOIN MATCHES m ON (p.TEAMNAME = m.TEAM_A_NAME OR m.TEAM_B_NAME = p.TEAMNAME) 
+				WHERE MATCHID = ? 
+				ORDER BY TEAM ASC`
+				team_response, err := DB.Query(query, matchid)
+				me.Teams = make(map[string]map[int64]string)
+				if err != nil {
+					panic(err)
+				}
+				for team_response.Next() {
+					var playername, team string
+					var playerid int64
+					team_response.Scan(&playername, &playerid, &team)
+					if _, ok := me.Teams[team]; !ok {
+						me.Teams[team] = make(map[int64]string)
+					}
+					me.Teams[team][int64(playerid)] = playername
+				}
 				me.RoundPositions = make(map[int]RoundEvents)
 				me.MapMeta = ex.GetMapMetadata(gamemap)
-				query := `SELECT p.PLAYERID, p.PLAYERNAME, re.XPOS, re.YPOS, re.ZPOS, re.TICK, rp.SIDE 
+
+				query = `SELECT p.PLAYERID, p.PLAYERNAME, re.WEAPON, re.XPOS, re.YPOS, re.ZPOS, re.TICK, rp.SIDE 
 					from ROUND_EVENTS as re 
 					JOIN PLAYERS p on p.PLAYERID = re.PLAYERID 
 					JOIN ROUND_PARTICIPANTS rp ON re.MATCHID = rp.MATCHID AND re.ROUND_NO = rp.ROUND_NO AND re.PLAYERID = rp.PLAYERID 
@@ -142,28 +164,32 @@ func main() {
 						continue
 					}
 					var RE RoundEvents
-					RE.PlayerPositions = make(map[int]map[int64]r3.Vector)
+					RE.PlayerPositions = make(map[int]map[int64]PlayerState)
 					RE.PlayerNames = make(map[int64]PlayerInfo)
 					rows, err := DB.Query(query, matchid, r)
 					if err != nil {
 						panic(err)
 					}
 					for rows.Next() {
-						var Name string
+						var Name, weapon string
 						var tick, side int
 						var x, y, z float64
 						var playerid int64
-						rows.Scan(&playerid, &Name, &x, &y, &z, &tick, &side)
+						rows.Scan(&playerid, &Name, &weapon, &x, &y, &z, &tick, &side)
 						position := r3.Vector{X: x, Y: y, Z: z}
 						if _, ok := RE.PlayerNames[playerid]; !ok {
 							RE.PlayerNames[playerid] = PlayerInfo{Name: Name, Side: side}
 						}
 						// No Tick has been created
 						if len(RE.PlayerPositions[tick]) == 0 {
-							RE.PlayerPositions[tick] = make(map[int64]r3.Vector)
-							RE.PlayerPositions[tick][playerid] = position
+							RE.PlayerPositions[tick] = make(map[int64]PlayerState)
+							RE.PlayerPositions[tick][playerid] = PlayerState{
+								Position: position, Weapon: weapon,
+							}
 						} else {
-							RE.PlayerPositions[tick][playerid] = position
+							RE.PlayerPositions[tick][playerid] = PlayerState{
+								Position: position, Weapon: weapon,
+							}
 						}
 					}
 					defer rows.Close()

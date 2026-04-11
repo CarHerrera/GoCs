@@ -29,12 +29,13 @@ type PlayerStats struct {
 	Assists int `json:"assists"`
 }
 type MatchEvents struct {
-	RoundPositions map[int]RoundEvents `json:"rounds"`
-	MapMeta        ex.Map              `json:"map"`
+	RoundPositions map[int]RoundEvents         `json:"rounds"`
+	MapMeta        ex.Map                      `json:"map"`
+	Teams          map[string]map[int64]string `json:"teams"`
 }
 type RoundEvents struct {
-	PlayerPositions map[int]map[int64]r3.Vector `json:"player_positions"`
-	PlayerNames     map[int64]PlayerInfo        `json:"player_info"`
+	PlayerPositions map[int]map[int64]PlayerState `json:"player_positions"`
+	PlayerNames     map[int64]PlayerInfo          `json:"player_info"`
 }
 type PlayerInfo struct {
 	Name string `json:"name"`
@@ -54,20 +55,15 @@ type Team struct {
 	PlayingPlayers map[string]Player `json:"Playing"`
 	inited         bool
 }
-type InGame struct {
-	Position []r3.Vector `json:"Positions"`
+type PlayerState struct {
+	Position r3.Vector `json:"vector"`
+	Weapon   string    `json:"weapon"`
 }
-type Match struct {
-	GameRounds map[int]Rounds `json:"Rounds"`
-}
-type Rounds struct {
-	Players map[string]InGame `json:"InGamePlayers"`
-}
-
 type posEntry struct {
 	matchID, roundNo, tick int
 	steamID                uint64
 	x, y, z                float64
+	weapon                 string
 }
 
 func getDemoPath() string {
@@ -93,13 +89,14 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 		GameMap = *msg.MapName
 	})
 	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
-		live = true
+
 		GS := p.GameState()
 		ctside := GS.TeamCounterTerrorists()
 		tside := GS.TeamTerrorists()
 		var teamname string
 		// start = true
 		if GS.GamePhase() == common.GamePhaseStartGamePhase {
+			live = true
 
 			for _, player := range tside.Members() {
 				team1Name := tside.ClanName()
@@ -202,7 +199,7 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 		killer := kill.Killer
 		asssiter := kill.Assister
 		victim := kill.Victim
-		if killer != nil {
+		if killer != nil && killer.Name != victim.Name {
 			team := killer.TeamState
 			if team.ID() == TeamStats[0].ID {
 				p, _ := TeamStats[0].PlayingPlayers[killer.Name]
@@ -349,7 +346,17 @@ func Parse2D(filename string) MatchEvents {
 	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
 		live = true
 		rounds = 1
+		playback.Teams = make(map[string]map[int64]string)
+		gs := p.GameState()
+		for _, player := range gs.Participants().Playing() {
+			name := player.TeamState.ClanName()
+			if _, ok := playback.Teams[name]; !ok {
+				playback.Teams[name] = make(map[int64]string)
+			}
+			playback.Teams[name][int64(player.SteamID64)] = player.Name
+		}
 	})
+	// p.RegisterEventHandler(func(events.M))
 	p.RegisterEventHandler(func(events.FrameDone) {
 		if live {
 			gs := p.GameState()
@@ -362,19 +369,23 @@ func Parse2D(filename string) MatchEvents {
 				if player.IsAlive() {
 
 					buffer = append(buffer, posEntry{
-						matchid, rounds, tick, player.SteamID64, pos.X, pos.Y, pos.Z,
+						matchid, rounds, tick, player.SteamID64, pos.X, pos.Y, pos.Z, player.ActiveWeapon().String(),
 					})
 					// Check to see if player is added
 					position := r3.Vector{X: pos.X, Y: pos.Y, Z: pos.Z}
 					if _, ok := playback.RoundPositions[rounds].PlayerNames[int64(player.SteamID64)]; !ok {
 						playback.RoundPositions[rounds].PlayerNames[int64(player.SteamID64)] = PlayerInfo{Name: player.Name, Side: int(player.GetTeam())}
 					}
-
+					// log.Printf("%v", player.Weapons())
 					if len(playback.RoundPositions[rounds].PlayerPositions[tick]) == 0 {
-						playback.RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]r3.Vector)
-						playback.RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = position
+						playback.RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]PlayerState)
+						playback.RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
+							Position: position, Weapon: player.ActiveWeapon().String(),
+						}
 					} else {
-						playback.RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = position
+						playback.RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
+							Position: position, Weapon: player.ActiveWeapon().String(),
+						}
 					}
 					// if _, ok := playback.RoundPositions[rounds].PlayerPositions[tick]; !ok {
 
@@ -392,7 +403,7 @@ func Parse2D(filename string) MatchEvents {
 
 		// Creating connecting tables
 		playback.RoundPositions[rounds] = RoundEvents{
-			PlayerPositions: make(map[int]map[int64]r3.Vector),
+			PlayerPositions: make(map[int]map[int64]PlayerState),
 			PlayerNames:     make(map[int64]PlayerInfo),
 		}
 		gs := p.GameState()
@@ -430,6 +441,7 @@ func Parse2D(filename string) MatchEvents {
 		finalBatch := make([]posEntry, len(buffer))
 		copy(finalBatch, buffer)
 		batchChan <- finalBatch
+		fmt.Printf("Final Round %d ended. Flushing %d rows to DB...\n", rounds, len(buffer))
 	}
 	close(batchChan)
 	wg.Wait()
@@ -447,15 +459,15 @@ func flushToDB(db *sql.DB, entries []posEntry) {
 		panic(err)
 	}
 
-	stmt, err := tx.Prepare("INSERT INTO ROUND_EVENTS (MATCHID,ROUND_NO,PLAYERID,XPOS,YPOS,ZPOS,TICK) VALUES (?,?,?,?,?,?,?)" +
-		"ON DUPLICATE KEY UPDATE XPOS=VALUES(XPOS), YPOS=VALUES(YPOS), ZPOS=VALUES(ZPOS)")
+	stmt, err := tx.Prepare("INSERT INTO ROUND_EVENTS (MATCHID,ROUND_NO,PLAYERID,WEAPON,XPOS,YPOS,ZPOS,TICK) VALUES (?,?,?,?,?,?,?,?)" +
+		"ON DUPLICATE KEY UPDATE WEAPON=(WEAPON), XPOS=VALUES(XPOS), YPOS=VALUES(YPOS), ZPOS=VALUES(ZPOS)")
 	if err != nil {
 		panic(err)
 	}
 	defer stmt.Close()
 
 	for _, e := range entries {
-		if _, err := stmt.Exec(e.matchID, e.roundNo, e.steamID, e.x, e.y, e.z, e.tick); err != nil {
+		if _, err := stmt.Exec(e.matchID, e.roundNo, e.steamID, e.weapon, e.x, e.y, e.z, e.tick); err != nil {
 			tx.Rollback()
 			panic(err)
 		}

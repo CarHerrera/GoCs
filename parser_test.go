@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
 	// Import the MariaDB-compatible driver anonymously
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/golang/geo/r2"
+	"github.com/golang/geo/r3"
 	"github.com/joho/godotenv"
+	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
 type SQLMatch struct {
@@ -46,160 +53,321 @@ func TestConnect(t *testing.T) {
 	}
 
 	DB = db
-	parse_demo_stats(fileName, 2)
-	// demo := `/home/carlos/NAS/CS2DEMOS/` + fileName
-	// file, err := os.Open(demo)
-	// if err != nil {
-	// 	t.Error("Error opening file")
-	// }
-	// p := dem.NewParser(file)
+	// parse_demo_stats(fileName, 2)
+	demo := os.Getenv("DEMO_PATH") + fileName
+	file, err := os.Open(demo)
+	if err != nil {
+		t.Error("Error opening file")
+	}
+	p := dem.NewParser(file)
 
-	// defer p.Close()
+	defer p.Close()
 	// var TeamStats [2]Team
-	// defer file.Close()
-	// live := false
-	// p.RegisterEventHandler(func(e events.MatchStartedChanged) {
+	defer file.Close()
+	const batchSize = 5000
+	var buffer []GrenadeEntry
+	var fireBuffer []FireEntry
+	batchChan := make(chan []GrenadeEntry, 100)
+	fireBatch := make(chan []FireEntry, 100)
+	var wg sync.WaitGroup
 
-	// 	GS := p.GameState()
-	// 	ctside := GS.TeamCounterTerrorists()
-	// 	tside := GS.TeamTerrorists()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for batch := range batchChan {
+			grenadeFlush(DB, batch) // Your helper function with the transaction
+		}
 
-	// 	// start = true
-	// 	if GS.GamePhase() == common.GamePhaseStartGamePhase {
-	// 		live = true
-	// 		var teamname string
-	// 		for _, player := range tside.Members() {
-	// 			team1Name := tside.ClanName()
-	// 			if team1Name == "" {
-	// 				team1Name = "Team 1"
-	// 			}
-	// 			if !TeamStats[0].inited {
-	// 				TeamStats[0] = Team{
-	// 					ID:             tside.ID(),
-	// 					EndScore:       -1,
-	// 					CTScore:        0,
-	// 					TScore:         0,
-	// 					ClanName:       team1Name,
-	// 					PlayingPlayers: make(map[string]Player),
-	// 					inited:         true,
-	// 				}
-	// 				if err := DB.QueryRow("SELECT TEAMNAME FROM TEAMS WHERE TEAMNAME = ?", team1Name).Scan(&teamname); err != nil {
-	// 					if err == sql.ErrNoRows {
-	// 						_, err := DB.Exec("INSERT INTO TEAMS (TEAMNAME) VALUES (?)", team1Name)
-	// 						if err != nil {
-	// 							panic(err)
-	// 						}
-	// 					} else {
-	// 						panic(err)
-	// 					}
-	// 				}
-	// 			}
-	// 			TeamStats[0].PlayingPlayers[player.Name] = Player{
-	// 				Name: player.Name,
-	// 				ID:   int64(player.SteamID64),
-	// 				Stats: PlayerStats{
-	// 					Kills:   0,
-	// 					Assists: 0,
-	// 					Deaths:  0,
-	// 				},
-	// 			}
-	// 		}
-	// 		for _, player := range ctside.Members() {
-	// 			team1Name := ctside.ClanName()
-	// 			if team1Name == "" {
-	// 				team1Name = "Team 2"
-	// 			}
-	// 			if !TeamStats[1].inited {
-	// 				TeamStats[1] = Team{
-	// 					ID:             ctside.ID(),
-	// 					EndScore:       -1,
-	// 					CTScore:        0,
-	// 					TScore:         0,
-	// 					ClanName:       team1Name,
-	// 					PlayingPlayers: make(map[string]Player),
-	// 					inited:         true,
-	// 				}
-	// 				if err := DB.QueryRow("SELECT TEAMNAME FROM TEAMS WHERE TEAMNAME = ?", team1Name).Scan(&teamname); err != nil {
-	// 					if err == sql.ErrNoRows {
-	// 						_, err := DB.Exec("INSERT INTO TEAMS (TEAMNAME) VALUES (?)", team1Name)
-	// 						if err != nil {
-	// 							panic(err)
-	// 						}
-	// 					} else {
-	// 						panic(err)
-	// 					}
-	// 				}
-	// 			}
-	// 			TeamStats[1].PlayingPlayers[player.Name] = Player{
-	// 				Name: player.Name,
-	// 				ID:   int64(player.SteamID64),
-	// 				Stats: PlayerStats{
-	// 					Kills:   0,
-	// 					Assists: 0,
-	// 					Deaths:  0,
-	// 				},
-	// 			}
+		for batch := range fireBatch {
+			fireFlush(DB, batch)
+		}
+	}()
+	live := false
+	rounds := 0
+	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
+		if p.GameState().GamePhase() == common.GamePhaseStartGamePhase {
+			live = true
+			rounds = 1
+		}
 
-	// 		}
-	// 		t.Logf("GAME STARTED")
-	// 	}
-	// 	// t.Logf("# MATCH STARTED %v", TeamStats)
+	})
+	var playback MatchEvents
+	RoundPositions := make(map[int]RoundEvents)
+	FireParticles := make(map[int][]r2.Point)
+	p.RegisterEventHandler(func(g events.GrenadeProjectileThrow) {
+		if live != true {
+			return
+		}
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		player := g.Projectile.Thrower
+		grenade := g.Projectile.Entity
+		id := g.Projectile.Entity.ID()
+		buffer = append(buffer, GrenadeEntry{
+			2, rounds, tick, id, player.SteamID64, grenade.Position().X, grenade.Position().Y, grenade.Position().Z, g.Projectile.WeaponInstance.String(), "FLYING",
+		})
+		position := r3.Vector{X: grenade.Position().X, Y: grenade.Position().Y, Z: grenade.Position().Z}
+		if len(RoundPositions[rounds].GrenadeEvents[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+		}
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Projectile.WeaponInstance.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+		t.Logf("%v: %v threw %v with ID %v", tick, player.Name, g.Projectile.WeaponInstance.String(), g.Projectile.Entity.ID())
+		g.Projectile.Entity.OnPositionUpdate(func(pos r3.Vector) {
+			upTick := p.GameState().IngameTick()
+			if upTick%4 == 0 {
+				buffer = append(buffer, GrenadeEntry{
+					2, rounds, upTick, id, player.SteamID64, pos.X, pos.Y, pos.Z, g.Projectile.WeaponInstance.String(), "FLYING",
+				})
+				position := r3.Vector{X: pos.X, Y: pos.Y, Z: pos.Z}
+				if len(RoundPositions[rounds].PlayerPositions[upTick]) == 0 {
+					RoundPositions[rounds].GrenadeEvents[upTick] = make(map[int]GrenadeState)
+					RoundPositions[rounds].GrenadeEvents[upTick][id] = GrenadeState{
+						Position: position, Grenade: g.Projectile.WeaponInstance.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+					}
+				} else {
+					RoundPositions[rounds].GrenadeEvents[upTick][id] = GrenadeState{
+						Position: position, Grenade: g.Projectile.WeaponInstance.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+					}
+				}
+			}
 
-	// })
+		})
+	})
+	p.RegisterEventHandler(func(g events.GrenadeProjectileDestroy) {
+		if live != true {
+			return
+		}
+		if g.Projectile.WeaponInstance.String() == "HE Grenade" || g.Projectile.WeaponInstance.String() == "Flashbang" || g.Projectile.WeaponInstance.String() == "Smoke Grenade" {
+			return
+		}
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		player := g.Projectile.Thrower
+		id := g.Projectile.Entity.ID()
+		t.Logf("%v: %v thrown %v with ID %v has landed", tick, player.Name, g.Projectile.WeaponInstance.String(), id)
+		if len(RoundPositions[rounds].GrenadeEvents[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+		}
+		position := g.Projectile.Entity.Position()
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Projectile.WeaponInstance.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+		buffer = append(buffer, GrenadeEntry{
+			2, rounds, tick, id, player.SteamID64, position.X, position.Y, position.Z, g.Projectile.WeaponInstance.String(), "LANDED",
+		})
+	})
+	p.RegisterEventHandler(func(g events.SmokeStart) {
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.GrenadeEntityID
+		player := g.Thrower
+		buffer = append(buffer, GrenadeEntry{
+			2, rounds, tick, id, player.SteamID64, g.Position.X, g.Position.Y, g.Position.Z, g.Grenade.String(), "BLOOMED",
+		})
+		t.Logf("%v: %v thrown %v with ID %v and it bloomed", tick, player.Name, g.Grenade.String(), g.GrenadeEntityID)
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
 
-	// p.RegisterEventHandler(func(kill events.Kill) {
-	// 	if !live {
-	// 		return
-	// 	}
-	// 	killer := kill.Killer
-	// 	asssiter := kill.Assister
-	// 	victim := kill.Victim
-	// 	t.Logf("Player: %s killed %s  with %v", kill.Killer, kill.Victim.Name, kill.Weapon)
-	// 	if killer != nil && killer.Name != victim.Name {
-	// 		team := killer.TeamState
-	// 		if team.ID() == TeamStats[0].ID {
-	// 			p, _ := TeamStats[0].PlayingPlayers[killer.Name]
-	// 			p.Stats.Kills++
-	// 			TeamStats[0].PlayingPlayers[killer.Name] = p
-	// 		} else {
-	// 			p, _ := TeamStats[1].PlayingPlayers[killer.Name]
-	// 			p.Stats.Kills++
-	// 			TeamStats[1].PlayingPlayers[killer.Name] = p
-	// 		}
-	// 	}
-	// 	if asssiter != nil {
-	// 		team := asssiter.TeamState
-	// 		if team.ID() == TeamStats[0].ID {
-	// 			p, _ := TeamStats[0].PlayingPlayers[asssiter.Name]
-	// 			p.Stats.Assists++
-	// 			TeamStats[0].PlayingPlayers[asssiter.Name] = p
-	// 		} else {
-	// 			p, _ := TeamStats[1].PlayingPlayers[asssiter.Name]
-	// 			p.Stats.Assists++
-	// 			TeamStats[1].PlayingPlayers[asssiter.Name] = p
-	// 		}
-	// 	}
-	// 	if victim != nil {
-	// 		team := victim.TeamState
-	// 		if team.ID() == TeamStats[0].ID {
-	// 			p, _ := TeamStats[0].PlayingPlayers[victim.Name]
-	// 			p.Stats.Deaths++
-	// 			TeamStats[0].PlayingPlayers[victim.Name] = p
-	// 		} else {
-	// 			p, _ := TeamStats[1].PlayingPlayers[victim.Name]
-	// 			p.Stats.Deaths++
-	// 			TeamStats[1].PlayingPlayers[victim.Name] = p
-	// 		}
-	// 	}
+		}
+		position := r3.Vector{X: g.Position.X, Y: g.Position.Y, Z: g.Position.Z}
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Grenade.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+	})
+	p.RegisterEventHandler(func(g events.SmokeExpired) {
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.GrenadeEntityID
+		player := g.Thrower
+		buffer = append(buffer, GrenadeEntry{
+			2, rounds, tick, id, player.SteamID64, g.Position.X, g.Position.Y, g.Position.Z, g.Grenade.String(), "EXPIRED",
+		})
+		t.Logf("%v: %v thrown %v with ID %v and it FADED", tick, player.Name, g.Grenade.String(), g.GrenadeEntityID)
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
 
-	// })
+		}
+		position := r3.Vector{X: g.Position.X, Y: g.Position.Y, Z: g.Position.Z}
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Grenade.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+	})
 
-	// err = p.ParseToEnd()
-	// t.Logf("%v", TeamStats)
-	// if err != nil {
-	// 	t.Errorf("Error %v", err)
-	// }
+	p.RegisterEventHandler(func(g events.HeExplode) {
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.GrenadeEntityID
+		player := g.Thrower
+		buffer = append(buffer, GrenadeEntry{
+			2, rounds, tick, id, player.SteamID64, g.Position.X, g.Position.Y, g.Position.Z, g.Grenade.String(), "EXPIRED",
+		})
+		t.Logf("%v: %v thrown %v with ID %v and it EXPLODED", tick, player.Name, g.Grenade.String(), g.GrenadeEntityID)
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
 
-	// 	log.Print("DONE")
+		}
+		position := r3.Vector{X: g.Position.X, Y: g.Position.Y, Z: g.Position.Z}
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Grenade.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+	})
+
+	p.RegisterEventHandler(func(g events.FlashExplode) {
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.GrenadeEntityID
+		player := g.Thrower
+		buffer = append(buffer, GrenadeEntry{
+			2, rounds, tick, id, player.SteamID64, g.Position.X, g.Position.Y, g.Position.Z, g.Grenade.String(), "EXPIRED",
+		})
+		t.Logf("%v: %v thrown %v with ID %v and it EXPLODED", tick, player.Name, g.Grenade.String(), g.GrenadeEntityID)
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+
+		}
+		position := r3.Vector{X: g.Position.X, Y: g.Position.Y, Z: g.Position.Z}
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Grenade.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+	})
+
+	p.RegisterEventHandler(func(g events.InfernoStart) {
+		if live == false {
+			return
+		}
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.Inferno.Entity.ID()
+		player := g.Inferno.Thrower()
+
+		t.Logf("%v %v GRENID:%v thrown by %v", tick, "FIRE", id, player)
+		// FireParticles[id] = g.Inferno.Fires().ConvexHull3D().Vertices
+		if len(RoundPositions[rounds].FirePositions[tick]) == 0 {
+			RoundPositions[rounds].FirePositions[tick] = make(map[int]FireState)
+		}
+		RoundPositions[rounds].FirePositions[tick][id] = FireState{
+			Vertices: g.Inferno.Fires().ConvexHull2D(), Status: "STARTING",
+		}
+		for i, fire := range g.Inferno.Fires().ConvexHull2D() {
+			fireBuffer = append(fireBuffer, FireEntry{
+				2, rounds, tick, id, i, fire.X, fire.Y, "STARTING",
+			})
+			t.Logf("%v Fire#%v at %v ID:%v START SPREAD", tick, i, fire, id)
+		}
+
+	})
+	p.RegisterEventHandler(func(g events.InfernoExpired) {
+		if live == false {
+			return
+		}
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.Inferno.Entity.ID()
+		player := g.Inferno.Thrower()
+		t.Logf("%v GRENID:%v thrown by %v EXPIRED", tick, id, player)
+		if len(RoundPositions[rounds].FirePositions[tick]) == 0 {
+			RoundPositions[rounds].FirePositions[tick] = make(map[int]FireState)
+		}
+		RoundPositions[rounds].FirePositions[tick][id] = FireState{
+			Vertices: g.Inferno.Fires().ConvexHull2D(), Status: "ENDING",
+		}
+		for i, fire := range g.Inferno.Fires().ConvexHull2D() {
+			t.Logf("%v Fire#%v at %v ID:%v EXPIRING", tick, i, fire, id)
+			fireBuffer = append(fireBuffer, FireEntry{
+				2, rounds, tick, id, i, fire.X, fire.Y, "ENDING",
+			})
+		}
+	})
+
+	p.RegisterEventHandler(func(f events.FrameDone) {
+		if live != true {
+			return
+		}
+		GS := p.GameState()
+		tick := GS.IngameTick()
+		flames := GS.Infernos()
+		if GS.IngameTick()%8 != 0 {
+			return
+		}
+		if len(flames) != 0 {
+			for key, inf := range flames {
+				lastState := FireParticles[key]
+				if slices.Equal(lastState, inf.Fires().ConvexHull2D()) {
+					return
+				} else {
+					if len(RoundPositions[rounds].FirePositions[tick]) == 0 {
+						RoundPositions[rounds].FirePositions[tick] = make(map[int]FireState)
+					}
+					RoundPositions[rounds].FirePositions[tick][key] = FireState{
+						Vertices: inf.Fires().ConvexHull2D(), Status: "SPREADING",
+					}
+					for i, fire := range inf.Fires().ConvexHull2D() {
+						fireBuffer = append(fireBuffer, FireEntry{
+							2, rounds, tick, key, i, fire.X, fire.Y, "SPREADING",
+						})
+						t.Logf("%v Fire#%v at %v ID:%v SPREADING", tick, i, fire, key)
+					}
+					FireParticles[key] = inf.Fires().ConvexHull2D()
+				}
+			}
+
+		}
+	})
+	p.RegisterEventHandler(func(e events.RoundStart) {
+		RoundPositions[rounds] = RoundEvents{
+			PlayerPositions: make(map[int]map[int64]PlayerState),
+			PlayerNames:     make(map[int64]PlayerInfo),
+			GrenadeEvents:   make(map[int]map[int]GrenadeState),
+			FirePositions:   make(map[int]map[int]FireState),
+		}
+	})
+	p.RegisterEventHandler(func(e events.RoundEndOfficial) {
+		if len(buffer) == 0 {
+			return
+		}
+
+		fmt.Printf("Round %d ended. Flushing %d rows to DB...\n", rounds, len(buffer)+len(fireBuffer))
+		rounds += 1
+		// IMPORTANT: Clear the buffer for the next round
+		batchToSend := make([]GrenadeEntry, len(buffer))
+		copy(batchToSend, buffer)
+
+		batchChan <- batchToSend
+		buffer = buffer[:0]
+
+		if len(fireBuffer) == 0 {
+			return
+		}
+
+		batchtwo := make([]FireEntry, len(fireBuffer))
+		copy(batchtwo, fireBuffer)
+		fireBatch <- batchtwo
+		fireBuffer = fireBuffer[:0]
+
+	})
+	err = p.ParseToEnd()
+	// t.Logf("%v", RoundPositions[4].GrenadeEvents)
+	if err != nil {
+		t.Errorf("Error %v", err)
+	}
+	if len(buffer) > 0 {
+		finalBatch := make([]GrenadeEntry, len(buffer))
+		copy(finalBatch, buffer)
+		batchChan <- finalBatch
+		fmt.Printf("Flushing %d rows to DB...\n", len(buffer))
+	}
+	if len(fireBuffer) > 0 {
+		batchtwo := make([]FireEntry, len(fireBuffer))
+		copy(batchtwo, fireBuffer)
+		fireBatch <- batchtwo
+		fireBuffer = fireBuffer[:0]
+	}
+	close(batchChan)
+	close(fireBatch)
+	wg.Wait()
+	fmt.Printf("Final Round %d ended. F", rounds)
+	playback.RoundPositions = RoundPositions[1]
 	// 	return c.Status(20).JSON(resp)
 }

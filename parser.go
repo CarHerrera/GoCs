@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 
+	"github.com/golang/geo/r2"
 	"github.com/golang/geo/r3"
 	ex "github.com/markus-wa/demoinfocs-golang/v5/examples"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
@@ -29,13 +31,17 @@ type PlayerStats struct {
 	Assists int `json:"assists"`
 }
 type MatchEvents struct {
-	RoundPositions map[int]RoundEvents         `json:"rounds"`
+	RoundPositions RoundEvents                 `json:"round_events"`
+	Rounds         int                         `json:"rounds"`
 	MapMeta        ex.Map                      `json:"map"`
 	Teams          map[string]map[int64]string `json:"teams"`
 }
 type RoundEvents struct {
+	// map[TICK] -> Map(ID) i.e playerid or ent id -> State/Info
 	PlayerPositions map[int]map[int64]PlayerState `json:"player_positions"`
 	PlayerNames     map[int64]PlayerInfo          `json:"player_info"`
+	GrenadeEvents   map[int]map[int]GrenadeState  `json:"grenade_events"`
+	FirePositions   map[int]map[int]FireState     `json:"fire_events"`
 }
 type PlayerInfo struct {
 	Name string `json:"name"`
@@ -59,11 +65,34 @@ type PlayerState struct {
 	Position r3.Vector `json:"vector"`
 	Weapon   string    `json:"weapon"`
 }
+type GrenadeState struct {
+	Position     r3.Vector `json:"vector"`
+	Grenade      string    `json:"grenade"`
+	ThrownByName string    `json:"thrownBy"`
+	ThrownByid   int64     `json:"thrownById"`
+	Status       string    `json:"status"`
+}
+type FireState struct {
+	Vertices []r2.Point `json:"vertices"`
+	Status   string     `json:"status"`
+}
 type posEntry struct {
 	matchID, roundNo, tick int
 	steamID                uint64
 	x, y, z                float64
 	weapon                 string
+}
+type GrenadeEntry struct {
+	matchID, roundNo, tick int
+	entid                  int
+	steamID                uint64
+	x, y, z                float64
+	grenade, state         string
+}
+type FireEntry struct {
+	matchID, roundNo, tick, entid, fireid int
+	x, y                                  float64
+	state                                 string
 }
 
 func getDemoPath() string {
@@ -237,6 +266,9 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 		}
 	})
 	p.RegisterEventHandler(func(score events.ScoreUpdated) {
+		if !live {
+			return
+		}
 		team1 := score.TeamState
 		// Check to make sure it isn't null
 		if TeamStats[0].inited && catch {
@@ -328,24 +360,36 @@ func Parse2D(filename string) MatchEvents {
 		panic(err)
 	}
 	const batchSize = 5000
-	var buffer []posEntry
-	batchChan := make(chan []posEntry, 100)
+	var playerBuffer []posEntry
+	var grenadeBuffer []GrenadeEntry
+	var fireBuffer []FireEntry
+	posBatch := make(chan []posEntry, 100)
+	grenadeBatch := make(chan []GrenadeEntry, 100)
+	fireBatch := make(chan []FireEntry, 100)
 	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for batch := range batchChan {
+		for batch := range posBatch {
 			flushToDB(DB, batch) // Your helper function with the transaction
+		}
+		for batch := range grenadeBatch {
+			grenadeFlush(DB, batch)
+		}
+		for batch := range fireBatch {
+			fireFlush(DB, batch)
 		}
 	}()
 	var playback MatchEvents
-	playback.RoundPositions = make(map[int]RoundEvents)
+	RoundPositions := make(map[int]RoundEvents)
+	FireParticles := make(map[int][]r2.Point)
 	live := false
 	rounds := 0
 	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
 		live = true
 		rounds = 1
+
 		playback.Teams = make(map[string]map[int64]string)
 		gs := p.GameState()
 		for _, player := range gs.Participants().Playing() {
@@ -361,50 +405,68 @@ func Parse2D(filename string) MatchEvents {
 		if live {
 			gs := p.GameState()
 			tick := gs.IngameTick()
+			flames := gs.Infernos()
 			if tick%8 != 0 {
 				return
 			}
 			for _, player := range gs.Participants().Playing() {
 				pos := player.Position()
 				if player.IsAlive() {
-
-					buffer = append(buffer, posEntry{
+					playerBuffer = append(playerBuffer, posEntry{
 						matchid, rounds, tick, player.SteamID64, pos.X, pos.Y, pos.Z, player.ActiveWeapon().String(),
 					})
 					// Check to see if player is added
 					position := r3.Vector{X: pos.X, Y: pos.Y, Z: pos.Z}
-					if _, ok := playback.RoundPositions[rounds].PlayerNames[int64(player.SteamID64)]; !ok {
-						playback.RoundPositions[rounds].PlayerNames[int64(player.SteamID64)] = PlayerInfo{Name: player.Name, Side: int(player.GetTeam())}
+					if _, ok := RoundPositions[rounds].PlayerNames[int64(player.SteamID64)]; !ok {
+						RoundPositions[rounds].PlayerNames[int64(player.SteamID64)] = PlayerInfo{Name: player.Name, Side: int(player.GetTeam())}
 					}
 					// log.Printf("%v", player.Weapons())
-					if len(playback.RoundPositions[rounds].PlayerPositions[tick]) == 0 {
-						playback.RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]PlayerState)
-						playback.RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
+					if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+						RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]PlayerState)
+						RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
 							Position: position, Weapon: player.ActiveWeapon().String(),
 						}
 					} else {
-						playback.RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
+						RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
 							Position: position, Weapon: player.ActiveWeapon().String(),
 						}
 					}
-					// if _, ok := playback.RoundPositions[rounds].PlayerPositions[tick]; !ok {
-
-					// } else {
-					// 	playback.RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = r2.Point{X: x, Y: y}
-					// }
 				}
 
 			}
+			if len(flames) != 0 {
+				for key, inf := range flames {
+					lastState := FireParticles[key]
+					if slices.Equal(lastState, inf.Fires().ConvexHull2D()) {
+						return
+					} else {
+						if len(RoundPositions[rounds].FirePositions[tick]) == 0 {
+							RoundPositions[rounds].FirePositions[tick] = make(map[int]FireState)
+						}
+						RoundPositions[rounds].FirePositions[tick][key] = FireState{
+							Vertices: inf.Fires().ConvexHull2D(), Status: "SPREADING",
+						}
+						for i, fire := range inf.Fires().ConvexHull2D() {
+							fireBuffer = append(fireBuffer, FireEntry{
+								matchid, rounds, tick, key, i, fire.X, fire.Y, "SPREADING",
+							})
+						}
+						FireParticles[key] = inf.Fires().ConvexHull2D()
+					}
+				}
 
+			}
 		}
 
 	})
 	p.RegisterEventHandler(func(e events.RoundStart) {
 
 		// Creating connecting tables
-		playback.RoundPositions[rounds] = RoundEvents{
+		RoundPositions[rounds] = RoundEvents{
 			PlayerPositions: make(map[int]map[int64]PlayerState),
 			PlayerNames:     make(map[int64]PlayerInfo),
+			GrenadeEvents:   make(map[int]map[int]GrenadeState),
+			FirePositions:   make(map[int]map[int]FireState),
 		}
 		gs := p.GameState()
 		_, err := DB.Exec("INSERT IGNORE INTO ROUNDS (MATCHID, ROUND_NO) VALUES (?,?)", matchid, rounds)
@@ -420,30 +482,222 @@ func Parse2D(filename string) MatchEvents {
 		}
 	})
 	p.RegisterEventHandler(func(e events.RoundEndOfficial) {
-		if len(buffer) == 0 {
+		bufferSize := len(playerBuffer) + len(grenadeBuffer) + len(fireBuffer)
+		fmt.Printf("Round %d ended. Flushing %d rows to DB...\n", rounds, bufferSize)
+		rounds += 1
+		// IMPORTANT: Clear the playerBuffer for the next round
+		if len(playerBuffer) > 0 {
+			batchToSend := make([]posEntry, len(playerBuffer))
+			copy(batchToSend, playerBuffer)
+			posBatch <- batchToSend
+			playerBuffer = playerBuffer[:0]
+		}
+		if len(grenadeBuffer) > 0 {
+			grenadeBatchSend := make([]GrenadeEntry, len(grenadeBuffer))
+			copy(grenadeBatchSend, grenadeBuffer)
+			grenadeBatch <- grenadeBatchSend
+			grenadeBuffer = grenadeBuffer[:0]
+		}
+		if len(fireBuffer) > 0 {
+			fireBatchSend := make([]FireEntry, len(fireBuffer))
+			copy(fireBatchSend, fireBuffer)
+			fireBatch <- fireBatchSend
+			fireBuffer = fireBuffer[:0]
+		}
+	})
+	p.RegisterEventHandler(func(g events.GrenadeProjectileThrow) {
+		if live != true {
 			return
 		}
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		player := g.Projectile.Thrower
+		grenade := g.Projectile.Entity
+		id := g.Projectile.Entity.ID()
+		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+			matchid, rounds, tick, id, player.SteamID64, grenade.Position().X, grenade.Position().Y, grenade.Position().Z, g.Projectile.WeaponInstance.String(), "FLYING",
+		})
+		position := r3.Vector{X: grenade.Position().X, Y: grenade.Position().Y, Z: grenade.Position().Z}
+		if len(RoundPositions[rounds].GrenadeEvents[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+		}
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Projectile.WeaponInstance.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+		g.Projectile.Entity.OnPositionUpdate(func(pos r3.Vector) {
+			upTick := p.GameState().IngameTick()
+			if upTick%4 == 0 {
+				grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+					matchid, rounds, upTick, id, player.SteamID64, pos.X, pos.Y, pos.Z, g.Projectile.WeaponInstance.String(), "FLYING",
+				})
+				position := r3.Vector{X: pos.X, Y: pos.Y, Z: pos.Z}
+				if len(RoundPositions[rounds].PlayerPositions[upTick]) == 0 {
+					RoundPositions[rounds].GrenadeEvents[upTick] = make(map[int]GrenadeState)
+					RoundPositions[rounds].GrenadeEvents[upTick][id] = GrenadeState{
+						Position: position, Grenade: g.Projectile.WeaponInstance.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+					}
+				} else {
+					RoundPositions[rounds].GrenadeEvents[upTick][id] = GrenadeState{
+						Position: position, Grenade: g.Projectile.WeaponInstance.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+					}
+				}
+			}
 
-		fmt.Printf("Round %d ended. Flushing %d rows to DB...\n", rounds, len(buffer))
-		rounds += 1
-		// IMPORTANT: Clear the buffer for the next round
-		batchToSend := make([]posEntry, len(buffer))
-		copy(batchToSend, buffer)
+		})
+	})
+	p.RegisterEventHandler(func(g events.GrenadeProjectileDestroy) {
+		if live != true {
+			return
+		}
+		if g.Projectile.WeaponInstance.String() == "HE Grenade" || g.Projectile.WeaponInstance.String() == "Flashbang" || g.Projectile.WeaponInstance.String() == "Smoke Grenade" {
+			return
+		}
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		player := g.Projectile.Thrower
+		id := g.Projectile.Entity.ID()
+		if len(RoundPositions[rounds].GrenadeEvents[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+		}
+		position := g.Projectile.Entity.Position()
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Projectile.WeaponInstance.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+			matchid, rounds, tick, id, player.SteamID64, position.X, position.Y, position.Z, g.Projectile.WeaponInstance.String(), "LANDED",
+		})
+	})
+	p.RegisterEventHandler(func(g events.SmokeStart) {
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.GrenadeEntityID
+		player := g.Thrower
+		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+			matchid, rounds, tick, id, player.SteamID64, g.Position.X, g.Position.Y, g.Position.Z, g.Grenade.String(), "BLOOMED",
+		})
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
 
-		batchChan <- batchToSend
-		buffer = buffer[:0]
+		}
+		position := r3.Vector{X: g.Position.X, Y: g.Position.Y, Z: g.Position.Z}
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Grenade.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+	})
+	p.RegisterEventHandler(func(g events.SmokeExpired) {
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.GrenadeEntityID
+		player := g.Thrower
+		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+			matchid, rounds, tick, id, player.SteamID64, g.Position.X, g.Position.Y, g.Position.Z, g.Grenade.String(), "EXPIRED",
+		})
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+
+		}
+		position := r3.Vector{X: g.Position.X, Y: g.Position.Y, Z: g.Position.Z}
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Grenade.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+	})
+
+	p.RegisterEventHandler(func(g events.HeExplode) {
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.GrenadeEntityID
+		player := g.Thrower
+		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+			matchid, rounds, tick, id, player.SteamID64, g.Position.X, g.Position.Y, g.Position.Z, g.Grenade.String(), "EXPIRED",
+		})
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+
+		}
+		position := r3.Vector{X: g.Position.X, Y: g.Position.Y, Z: g.Position.Z}
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Grenade.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+	})
+
+	p.RegisterEventHandler(func(g events.FlashExplode) {
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.GrenadeEntityID
+		player := g.Thrower
+		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+			matchid, rounds, tick, id, player.SteamID64, g.Position.X, g.Position.Y, g.Position.Z, g.Grenade.String(), "EXPIRED",
+		})
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+
+		}
+		position := r3.Vector{X: g.Position.X, Y: g.Position.Y, Z: g.Position.Z}
+		RoundPositions[rounds].GrenadeEvents[tick][id] = GrenadeState{
+			Position: position, Grenade: g.Grenade.String(), ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+	})
+	p.RegisterEventHandler(func(g events.InfernoStart) {
+		if live == false {
+			return
+		}
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.Inferno.Entity.ID()
+
+		// FireParticles[id] = g.Inferno.Fires().ConvexHull3D().Vertices
+		if len(RoundPositions[rounds].FirePositions[tick]) == 0 {
+			RoundPositions[rounds].FirePositions[tick] = make(map[int]FireState)
+		}
+		RoundPositions[rounds].FirePositions[tick][id] = FireState{
+			Vertices: g.Inferno.Fires().ConvexHull2D(), Status: "STARTING",
+		}
+		for i, fire := range g.Inferno.Fires().ConvexHull2D() {
+			fireBuffer = append(fireBuffer, FireEntry{
+				matchid, rounds, tick, id, i, fire.X, fire.Y, "STARTING",
+			})
+		}
+
+	})
+	p.RegisterEventHandler(func(g events.InfernoExpired) {
+		if live == false {
+			return
+		}
+		gs := p.GameState()
+		tick := gs.IngameTick()
+		id := g.Inferno.Entity.ID()
+		if len(RoundPositions[rounds].FirePositions[tick]) == 0 {
+			RoundPositions[rounds].FirePositions[tick] = make(map[int]FireState)
+		}
+		RoundPositions[rounds].FirePositions[tick][id] = FireState{
+			Vertices: g.Inferno.Fires().ConvexHull2D(), Status: "ENDING",
+		}
+		for i, fire := range g.Inferno.Fires().ConvexHull2D() {
+			fireBuffer = append(fireBuffer, FireEntry{
+				matchid, rounds, tick, id, i, fire.X, fire.Y, "ENDING",
+			})
+		}
 	})
 	err = p.ParseToEnd()
 	if err != nil {
 		panic(err)
 	}
-	if len(buffer) > 0 {
-		finalBatch := make([]posEntry, len(buffer))
-		copy(finalBatch, buffer)
-		batchChan <- finalBatch
-		fmt.Printf("Final Round %d ended. Flushing %d rows to DB...\n", rounds, len(buffer))
+	if len(playerBuffer) > 0 {
+		bufferSize := len(playerBuffer) + len(grenadeBuffer) + len(fireBuffer)
+		finalBatch := make([]posEntry, len(playerBuffer))
+		copy(finalBatch, playerBuffer)
+		grenadeBatchSend := make([]GrenadeEntry, len(grenadeBuffer))
+		copy(grenadeBatchSend, grenadeBuffer)
+		fireBatchSend := make([]FireEntry, len(fireBuffer))
+		copy(fireBatchSend, fireBuffer)
+		posBatch <- finalBatch
+		grenadeBatch <- grenadeBatchSend
+		fireBatch <- fireBatchSend
+		fmt.Printf("Final Round %d ended. Flushing %d rows to DB...\n", rounds, bufferSize)
 	}
-	close(batchChan)
+	close(posBatch)
+	close(grenadeBatch)
+	close(fireBatch)
 	wg.Wait()
 	_, err = DB.Exec("UPDATE MATCHES SET PARSED_2D = 1 WHERE MATCHID = ?", matchid)
 
@@ -451,6 +705,8 @@ func Parse2D(filename string) MatchEvents {
 		panic(err)
 	}
 	playback.MapMeta = ex.GetMapMetadata(matchmap)
+	playback.RoundPositions = RoundPositions[1]
+	playback.Rounds = rounds
 	return playback
 }
 func flushToDB(db *sql.DB, entries []posEntry) {
@@ -468,6 +724,53 @@ func flushToDB(db *sql.DB, entries []posEntry) {
 
 	for _, e := range entries {
 		if _, err := stmt.Exec(e.matchID, e.roundNo, e.steamID, e.weapon, e.x, e.y, e.z, e.tick); err != nil {
+			tx.Rollback()
+			panic(err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		panic(err)
+	}
+}
+
+func fireFlush(db *sql.DB, entries []FireEntry) {
+	tx, err := db.Begin()
+	if err != nil {
+		panic(err)
+	}
+	stmt, err := tx.Prepare("INSERT INTO FIRE_VERTICES (MATCHID,ROUND_NO,TICK,ENTITYID,FIREID,XPOS,YPOS,ENTSTATE)" +
+		"VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE XPOS=VALUES(XPOS), YPOS=VALUES(YPOS)")
+	if err != nil {
+		panic(err)
+	}
+	defer stmt.Close()
+	for _, e := range entries {
+		if _, err := stmt.Exec(e.matchID, e.roundNo, e.tick, e.entid, e.fireid, e.x, e.y, e.state); err != nil {
+			tx.Rollback()
+			panic(err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		panic(err)
+	}
+}
+func grenadeFlush(db *sql.DB, entries []GrenadeEntry) {
+	tx, err := db.Begin()
+	if err != nil {
+		panic(err)
+	}
+
+	stmt, err := tx.Prepare("INSERT INTO GRENADE_EVENTS (MATCHID,ROUND_NO,PLAYERID,ENTITYID,TICK,XPOS,YPOS,ZPOS,GRENADE,ENTSTATE) VALUES (?,?,?,?,?,?,?,?,?,?)" +
+		"ON DUPLICATE KEY UPDATE GRENADE=(GRENADE), XPOS=VALUES(XPOS), YPOS=VALUES(YPOS), ZPOS=VALUES(ZPOS)")
+	if err != nil {
+		panic(err)
+	}
+	defer stmt.Close()
+
+	for _, e := range entries {
+		if _, err := stmt.Exec(e.matchID, e.roundNo, e.steamID, e.entid, e.tick, e.x, e.y, e.z, e.grenade, e.state); err != nil {
 			tx.Rollback()
 			panic(err)
 		}

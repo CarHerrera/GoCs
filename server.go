@@ -8,12 +8,12 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/golang/geo/r2"
 	"github.com/golang/geo/r3"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/static"
-	"github.com/gofiber/template/html/v2"
 	"github.com/joho/godotenv"
 	ex "github.com/markus-wa/demoinfocs-golang/v5/examples"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
@@ -53,7 +53,7 @@ func Connect() {
 }
 
 func main() {
-	engine := html.New("./views", ".html")
+	// engine := html.New()
 	err := godotenv.Load()
 	if err != nil {
 		log.Println("No .env file found, using system environment variables")
@@ -63,7 +63,7 @@ func main() {
 	app := fiber.New(fiber.Config{
 		// Provide a template engine
 		BodyLimit: 1 * 1024 * 1024 * 1024,
-		Views:     engine,
+		// Views:     engine,
 	})
 	// had to add this for the fetch to work
 	app.Use(cors.New(cors.Config{
@@ -121,12 +121,23 @@ func main() {
 		return c.Status(200).JSON(file)
 	})
 
-	app.Get("/2DPlayback/:demoName", func(c fiber.Ctx) error {
+	app.Get("/2DPlayback/:demoName-:roundNo<int>", func(c fiber.Ctx) error {
 		var matchid, parsed2d, rounds int
 		var gamemap string
-
+		if c.Params("demoName") == "" {
+			log.Printf("%s", c.Params("demoName"))
+			return c.SendStatus(fiber.StatusNotFound)
+		}
+		log.Printf("%s", c.Params("demoName"))
+		log.Printf("%s", c.Params("roundNo"))
 		if err := DB.QueryRow("SELECT MATCHID, MAP, PARSED_2D, (TEAM_A_FINAL_SCORE+ TEAM_B_FINAL_SCORE) as ROUND_TOTAL FROM MATCHES WHERE DEMO_NAME = ?", c.Params("demoName")).Scan(&matchid, &gamemap, &parsed2d, &rounds); err != nil {
-			panic(err)
+			if err == sql.ErrNoRows {
+				log.Print("SQL ERROR")
+				return c.SendStatus(fiber.StatusNotFound)
+			} else {
+				panic(err)
+			}
+
 		} else {
 			if (parsed2d) == 1 {
 				var me MatchEvents
@@ -151,7 +162,6 @@ func main() {
 					}
 					me.Teams[team][int64(playerid)] = playername
 				}
-				me.RoundPositions = make(map[int]RoundEvents)
 				me.MapMeta = ex.GetMapMetadata(gamemap)
 
 				query = `SELECT p.PLAYERID, p.PLAYERNAME, re.WEAPON, re.XPOS, re.YPOS, re.ZPOS, re.TICK, rp.SIDE 
@@ -159,44 +169,92 @@ func main() {
 					JOIN PLAYERS p on p.PLAYERID = re.PLAYERID 
 					JOIN ROUND_PARTICIPANTS rp ON re.MATCHID = rp.MATCHID AND re.ROUND_NO = rp.ROUND_NO AND re.PLAYERID = rp.PLAYERID 
 					WHERE re.MATCHID = ? AND re.ROUND_NO = ? ORDER BY TICK ASC`
-				for r := range rounds + 1 {
-					if r == 0 {
-						continue
+				var RE RoundEvents
+				RE.PlayerPositions = make(map[int]map[int64]PlayerState)
+				RE.PlayerNames = make(map[int64]PlayerInfo)
+				RE.GrenadeEvents = make(map[int]map[int]GrenadeState)
+				RE.FirePositions = make(map[int]map[int]FireState)
+				rows, err := DB.Query(query, matchid, c.Params("roundNo"))
+				if err != nil {
+					panic(err)
+				}
+				for rows.Next() {
+					var Name, weapon string
+					var tick, side int
+					var x, y, z float64
+					var playerid int64
+					rows.Scan(&playerid, &Name, &weapon, &x, &y, &z, &tick, &side)
+					position := r3.Vector{X: x, Y: y, Z: z}
+					if _, ok := RE.PlayerNames[playerid]; !ok {
+						RE.PlayerNames[playerid] = PlayerInfo{Name: Name, Side: side}
 					}
-					var RE RoundEvents
-					RE.PlayerPositions = make(map[int]map[int64]PlayerState)
-					RE.PlayerNames = make(map[int64]PlayerInfo)
-					rows, err := DB.Query(query, matchid, r)
-					if err != nil {
-						panic(err)
-					}
-					for rows.Next() {
-						var Name, weapon string
-						var tick, side int
-						var x, y, z float64
-						var playerid int64
-						rows.Scan(&playerid, &Name, &weapon, &x, &y, &z, &tick, &side)
-						position := r3.Vector{X: x, Y: y, Z: z}
-						if _, ok := RE.PlayerNames[playerid]; !ok {
-							RE.PlayerNames[playerid] = PlayerInfo{Name: Name, Side: side}
+					// No Tick has been created
+					if len(RE.PlayerPositions[tick]) == 0 {
+						RE.PlayerPositions[tick] = make(map[int64]PlayerState)
+						RE.PlayerPositions[tick][playerid] = PlayerState{
+							Position: position, Weapon: weapon,
 						}
-						// No Tick has been created
-						if len(RE.PlayerPositions[tick]) == 0 {
-							RE.PlayerPositions[tick] = make(map[int64]PlayerState)
-							RE.PlayerPositions[tick][playerid] = PlayerState{
-								Position: position, Weapon: weapon,
-							}
-						} else {
-							RE.PlayerPositions[tick][playerid] = PlayerState{
-								Position: position, Weapon: weapon,
-							}
+					} else {
+						RE.PlayerPositions[tick][playerid] = PlayerState{
+							Position: position, Weapon: weapon,
 						}
 					}
-					defer rows.Close()
-					me.RoundPositions[r] = RE
+					// if grenade != "" {
+					// 	if len(RE.GrenadeEvents[tick]) == 0 {
+					// 		RE.GrenadeEvents[tick] = make(map[int64]GrenadeState)
+					// 	}
+					// 	RE.GrenadeEvents[tick][grenadeid] = GrenadeState{
+					// 		Position: position, Grenade: grenade, ThrownByName: RE.PlayerNames[gthrowid].Name, ThrownByid: int64(gthrowid),
+					// 	}
+					// }
 
+					defer rows.Close()
+				}
+				query = `SELECT p.PLAYERID, GE.ENTITYID, p.PLAYERNAME, GE.GRENADE, GE.XPOS, GE.YPOS, GE.ZPOS, GE.TICK, GE.ENTSTATE
+				from GRENADE_EVENTS as GE 
+				JOIN PLAYERS p on p.PLAYERID = GE.PLAYERID 
+				WHERE GE.MATCHID = ? AND GE.ROUND_NO = ? ORDER BY TICK ASC;`
+				rows, err = DB.Query(query, matchid, c.Params("roundNo"))
+				for rows.Next() {
+					var Name, grenade, status string
+					var tick, grenadeid int
+					var x, y, z float64
+					var playerid int64
+					rows.Scan(&playerid, &grenadeid, &Name, &grenade, &x, &y, &z, &tick, &status)
+					position := r3.Vector{X: x, Y: y, Z: z}
+
+					// No Tick has been created
+					if len(RE.GrenadeEvents[tick]) == 0 {
+						RE.GrenadeEvents[tick] = make(map[int]GrenadeState)
+					}
+					RE.GrenadeEvents[tick][grenadeid] = GrenadeState{
+						Position: position, Grenade: grenade, ThrownByName: Name, ThrownByid: playerid, Status: status,
+					}
+
+					defer rows.Close()
 				}
 
+				query = `SELECT ENTITYID, FIREID, TICK, XPOS, YPOS, ENTSTATE 
+				FROM FIRE_VERTICES
+				WHERE MATCHID = ? AND ROUND_NO = ?
+				ORDER BY TICK, FIREID`
+				rows, err = DB.Query(query, matchid, c.Params("roundNo"))
+				for rows.Next() {
+					var entid, fireid, tick int
+					var x, y float64
+					var state string
+					rows.Scan(&entid, &fireid, &tick, &x, &y, &state)
+					position := r2.Point{X: x, Y: y}
+					if len(RE.FirePositions[tick]) == 0 {
+						RE.FirePositions[tick] = make(map[int]FireState)
+					}
+
+					RE.FirePositions[tick][entid] = FireState{
+						Vertices: append(RE.FirePositions[tick][entid].Vertices, position), Status: state,
+					}
+				}
+				me.RoundPositions = RE
+				me.Rounds = rounds
 				// fmt.Printf("Out:%v", me.RoundPositions[1])
 				return c.Status(200).JSON(me)
 			} else {

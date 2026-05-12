@@ -77,10 +77,10 @@ type FireState struct {
 	Status   string     `json:"status"`
 }
 type posEntry struct {
-	matchID, roundNo, tick int
-	steamID                uint64
-	x, y, z                float64
-	weapon                 string
+	matchID, roundNo, tick, side int
+	steamID                      uint64
+	x, y, z                      float64
+	weapon                       string
 }
 type GrenadeEntry struct {
 	matchID, roundNo, tick int
@@ -118,7 +118,6 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 		GameMap = *msg.MapName
 	})
 	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
-
 		GS := p.GameState()
 		ctside := GS.TeamCounterTerrorists()
 		tside := GS.TeamTerrorists()
@@ -126,7 +125,6 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 		// start = true
 		if GS.GamePhase() == common.GamePhaseStartGamePhase {
 			live = true
-
 			for _, player := range tside.Members() {
 				team1Name := tside.ClanName()
 				if team1Name == "" {
@@ -204,6 +202,9 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 	})
 	// Included the following 3 to help debug why trackers weren't working.
 	p.RegisterEventHandler(func(h events.TeamSideSwitch) {
+		if !live {
+			return
+		}
 		lrth = false
 		//
 		temp := TeamStats[0].ID
@@ -363,9 +364,9 @@ func Parse2D(filename string) MatchEvents {
 	var playerBuffer []posEntry
 	var grenadeBuffer []GrenadeEntry
 	var fireBuffer []FireEntry
-	posBatch := make(chan []posEntry, 100)
-	grenadeBatch := make(chan []GrenadeEntry, 100)
-	fireBatch := make(chan []FireEntry, 100)
+	posBatch := make(chan []posEntry, 300)
+	grenadeBatch := make(chan []GrenadeEntry, 300)
+	fireBatch := make(chan []FireEntry, 300)
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -392,12 +393,17 @@ func Parse2D(filename string) MatchEvents {
 
 		playback.Teams = make(map[string]map[int64]string)
 		gs := p.GameState()
+		_, err := DB.Exec("INSERT IGNORE INTO ROUNDS (MATCHID, ROUND_NO) VALUES (?,?)", matchid, rounds)
 		for _, player := range gs.Participants().Playing() {
 			name := player.TeamState.ClanName()
 			if _, ok := playback.Teams[name]; !ok {
 				playback.Teams[name] = make(map[int64]string)
 			}
 			playback.Teams[name][int64(player.SteamID64)] = player.Name
+			_, err = DB.Exec("INSERT IGNORE INTO ROUND_PARTICIPANTS (MATCHID, ROUND_NO, PLAYERID, SIDE) VALUES (?,?,?,?)", matchid, rounds, player.SteamID64, int(player.GetTeam()))
+			if err != nil {
+				panic(err)
+			}
 		}
 	})
 	// p.RegisterEventHandler(func(events.M))
@@ -413,7 +419,7 @@ func Parse2D(filename string) MatchEvents {
 				pos := player.Position()
 				if player.IsAlive() {
 					playerBuffer = append(playerBuffer, posEntry{
-						matchid, rounds, tick, player.SteamID64, pos.X, pos.Y, pos.Z, player.ActiveWeapon().String(),
+						matchid, rounds, tick, int(player.GetTeam()), player.SteamID64, pos.X, pos.Y, pos.Z, player.ActiveWeapon().String(),
 					})
 					// Check to see if player is added
 					position := r3.Vector{X: pos.X, Y: pos.Y, Z: pos.Z}
@@ -460,7 +466,9 @@ func Parse2D(filename string) MatchEvents {
 
 	})
 	p.RegisterEventHandler(func(e events.RoundStart) {
-
+		if !live {
+			return
+		}
 		// Creating connecting tables
 		RoundPositions[rounds] = RoundEvents{
 			PlayerPositions: make(map[int]map[int64]PlayerState),
@@ -482,6 +490,9 @@ func Parse2D(filename string) MatchEvents {
 		}
 	})
 	p.RegisterEventHandler(func(e events.RoundEndOfficial) {
+		if !live {
+			return
+		}
 		bufferSize := len(playerBuffer) + len(grenadeBuffer) + len(fireBuffer)
 		fmt.Printf("Round %d ended. Flushing %d rows to DB...\n", rounds, bufferSize)
 		rounds += 1
@@ -568,6 +579,9 @@ func Parse2D(filename string) MatchEvents {
 		})
 	})
 	p.RegisterEventHandler(func(g events.SmokeStart) {
+		if live != true {
+			return
+		}
 		gs := p.GameState()
 		tick := gs.IngameTick()
 		id := g.GrenadeEntityID
@@ -585,6 +599,9 @@ func Parse2D(filename string) MatchEvents {
 		}
 	})
 	p.RegisterEventHandler(func(g events.SmokeExpired) {
+		if live != true {
+			return
+		}
 		gs := p.GameState()
 		tick := gs.IngameTick()
 		id := g.GrenadeEntityID
@@ -603,6 +620,9 @@ func Parse2D(filename string) MatchEvents {
 	})
 
 	p.RegisterEventHandler(func(g events.HeExplode) {
+		if live != true {
+			return
+		}
 		gs := p.GameState()
 		tick := gs.IngameTick()
 		id := g.GrenadeEntityID
@@ -621,6 +641,9 @@ func Parse2D(filename string) MatchEvents {
 	})
 
 	p.RegisterEventHandler(func(g events.FlashExplode) {
+		if live != true {
+			return
+		}
 		gs := p.GameState()
 		tick := gs.IngameTick()
 		id := g.GrenadeEntityID
@@ -682,23 +705,30 @@ func Parse2D(filename string) MatchEvents {
 	if err != nil {
 		panic(err)
 	}
+	bufferSize := len(playerBuffer) + len(grenadeBuffer) + len(fireBuffer)
 	if len(playerBuffer) > 0 {
-		bufferSize := len(playerBuffer) + len(grenadeBuffer) + len(fireBuffer)
-		finalBatch := make([]posEntry, len(playerBuffer))
-		copy(finalBatch, playerBuffer)
+		batchToSend := make([]posEntry, len(playerBuffer))
+		copy(batchToSend, playerBuffer)
+		posBatch <- batchToSend
+		playerBuffer = playerBuffer[:0]
+	}
+	if len(grenadeBuffer) > 0 {
 		grenadeBatchSend := make([]GrenadeEntry, len(grenadeBuffer))
 		copy(grenadeBatchSend, grenadeBuffer)
+		grenadeBatch <- grenadeBatchSend
+		grenadeBuffer = grenadeBuffer[:0]
+	}
+	if len(fireBuffer) > 0 {
 		fireBatchSend := make([]FireEntry, len(fireBuffer))
 		copy(fireBatchSend, fireBuffer)
-		posBatch <- finalBatch
-		grenadeBatch <- grenadeBatchSend
 		fireBatch <- fireBatchSend
-		fmt.Printf("Final Round %d ended. Flushing %d rows to DB...\n", rounds, bufferSize)
+		fireBuffer = fireBuffer[:0]
 	}
 	close(posBatch)
 	close(grenadeBatch)
 	close(fireBatch)
 	wg.Wait()
+	fmt.Printf("Final Round %d ended. Flushing %d rows to DB...\n", len(RoundPositions), bufferSize)
 	_, err = DB.Exec("UPDATE MATCHES SET PARSED_2D = 1 WHERE MATCHID = ?", matchid)
 
 	if err != nil {
@@ -706,13 +736,32 @@ func Parse2D(filename string) MatchEvents {
 	}
 	playback.MapMeta = ex.GetMapMetadata(matchmap)
 	playback.RoundPositions = RoundPositions[1]
-	playback.Rounds = rounds
+	playback.Rounds = len(RoundPositions)
 	return playback
 }
 func flushToDB(db *sql.DB, entries []posEntry) {
 	tx, err := db.Begin()
 	if err != nil {
 		panic(err)
+	}
+
+	Players := make(map[uint64]int)
+
+	for _, e := range entries {
+		_, err = DB.Exec("INSERT IGNORE INTO ROUNDS (MATCHID, ROUND_NO) VALUES (?,?)", e.matchID, e.roundNo)
+		if err != nil {
+			panic(err)
+		}
+		_, ok := Players[e.steamID]
+		if !ok {
+			Players[e.steamID] = e.side
+			_, err = DB.Exec("INSERT IGNORE INTO ROUND_PARTICIPANTS (MATCHID, ROUND_NO, PLAYERID, SIDE) VALUES (?,?,?,?)", e.matchID, e.roundNo, e.steamID, e.side)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			continue
+		}
 	}
 
 	stmt, err := tx.Prepare("INSERT INTO ROUND_EVENTS (MATCHID,ROUND_NO,PLAYERID,WEAPON,XPOS,YPOS,ZPOS,TICK) VALUES (?,?,?,?,?,?,?,?)" +
@@ -723,6 +772,7 @@ func flushToDB(db *sql.DB, entries []posEntry) {
 	defer stmt.Close()
 
 	for _, e := range entries {
+		// fmt.Printf("MID:%v, ROUND_NO:%v, STEAM:%v, WEAPON:%v, X:%v, Y:%v, Z:%v, TICK:%v\n", e.matchID, e.roundNo, e.steamID, e.weapon, e.x, e.y, e.z, e.tick)
 		if _, err := stmt.Exec(e.matchID, e.roundNo, e.steamID, e.weapon, e.x, e.y, e.z, e.tick); err != nil {
 			tx.Rollback()
 			panic(err)

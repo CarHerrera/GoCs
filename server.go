@@ -124,8 +124,9 @@ func main() {
 	app.Get("/2DPlayback/:demoName-:roundNo<int>", func(c fiber.Ctx) error {
 		var matchid, parsed2d, rounds int
 		var gamemap string
+		log.Printf("RECEIVED")
 		if c.Params("demoName") == "" {
-			log.Printf("%s", c.Params("demoName"))
+			log.Printf("Empty String: %s", c.Params("demoName"))
 			return c.SendStatus(fiber.StatusNotFound)
 		}
 		log.Printf("%s", c.Params("demoName"))
@@ -133,6 +134,7 @@ func main() {
 		if err := DB.QueryRow("SELECT MATCHID, MAP, PARSED_2D, (TEAM_A_FINAL_SCORE+ TEAM_B_FINAL_SCORE) as ROUND_TOTAL FROM MATCHES WHERE DEMO_NAME = ?", c.Params("demoName")).Scan(&matchid, &gamemap, &parsed2d, &rounds); err != nil {
 			if err == sql.ErrNoRows {
 				log.Print("SQL ERROR")
+				log.Printf("%s", c.Params("roundNo"))
 				return c.SendStatus(fiber.StatusNotFound)
 			} else {
 				panic(err)

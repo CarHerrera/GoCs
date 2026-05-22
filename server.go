@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/joho/godotenv"
 	ex "github.com/markus-wa/demoinfocs-golang/v5/examples"
@@ -68,11 +69,12 @@ func main() {
 	// had to add this for the fetch to work
 	app.Use(cors.New(cors.Config{
 		// Since it is running through github codespace/ssh specify both urls
-		AllowOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173/"},
+		AllowOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173/", "https://localhost:5173"},
 		AllowMethods: []string{"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH"},
 		AllowHeaders: []string{"Origin", "Content-Type", "Accept"},
 	}))
 	app.Use("/static", static.New("./static"))
+	app.Use(recover.New())
 	port := ":4000"
 	app.Get("/AllDemos", func(c fiber.Ctx) error {
 		entries, err := os.ReadDir(getDemoPath())
@@ -273,11 +275,21 @@ func main() {
 		if err := DB.QueryRow("SELECT DEMO_NAME, MAP, MATCHID, PARSED_STATS FROM MATCHES WHERE DEMO_NAME = ?", demo).Scan(
 			&row.FileName, &row.Map, &row.ID, &parsed); err != nil {
 
-			panic(err)
+			return c.Status(500).JSON(fiber.Map{
+				"message": "Failed to SQL Error",
+				"success": "false",
+			})
 		} else {
 			// log.Printf("File found in DB. MATCH ID: %v", row.ID)
 			if parsed == 0 {
-				demo_stats := parse_demo_stats(demo, row.ID)
+				demo_stats, err := parse_demo_stats(demo, row.ID)
+				log.Printf("%v failed to parse.", demo)
+				if err != nil {
+					return c.Status(500).JSON(fiber.Map{
+						"message": "Failed to parse error",
+						"success": "false",
+					})
+				}
 				return c.Status(200).JSON(demo_stats.TeamStats)
 			} else {
 				query := `

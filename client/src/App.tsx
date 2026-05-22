@@ -2,6 +2,7 @@ import DemoTable from './demoTables.tsx'
 import AdvancedStats from './statInfo';
 import { useId } from 'react';
 import { BrowserRouter, Link, Routes, Route } from 'react-router-dom';
+import TestKonva from './testingKonva.tsx';
 function Home() {
   const fileId = useId();
   return <>
@@ -30,6 +31,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/demoList" element={<DemoTable />} />
           <Route path="/advancedStats" element={<AdvancedStats  />} />
+          <Route path="/Test" element={<TestKonva  />} />
         </Routes>
     </BrowserRouter>
       

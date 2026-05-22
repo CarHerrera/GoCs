@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { Layer, Stage, Text, Circle, Group} from 'react-konva';
+import { Layer, Stage, Text, Circle, Group, Rect} from 'react-konva';
 import { URLImage } from "./URLImage";
 import Konva from "konva";
 // interface Vector {
@@ -63,18 +63,68 @@ interface PlayBackRef{
     grenade_pos: Map<number, Map<string, GrenadeState>>;
     fire_vertices: Map<number, Map<string, FireState>>;
 }
+
+function playerBoxInfo({width, height, tpad, lpad, i, name}:{width:number, height:number, tpad:number,lpad:number, i:number, name:string}){
+    let color ="white"
+    switch (i){
+        case 0:
+            color="green"
+        break;
+        case 1:
+            color="blue"
+        break;
+        case 2:
+            color="purple"
+        break;
+        case 3:
+            color="yellow"
+        break;
+        case 4:
+            color="orange"
+        break;
+        
+    }
+    if (i == 0) {
+        const bottom = height - 20 - tpad/2;
+        return <Group key={i}>
+            <Rect width={width} height={height} fill={color} stroke={"black"} strokeWidth={5}/>
+            <Rect width={width} height={height *.4} fill={"red"} stroke={"black"} strokeWidth={5}/>
+            <Text width={width} text={name} fill={"white"} x={lpad}  y={tpad} fontSize={15} ></Text>
+            <Text width={width} text={"Kills: 0, Assists: 0, Deaths: 0"} fill={"white"} x={lpad}  y={bottom/2 + tpad} fontSize={15} ></Text>
+            <Text width={width} text={"AK1 GS: HE,F,F,M 30/4"} fill={"white"} x={lpad}  y={bottom} fontSize={15} ></Text>
+        </Group>
+    } else {
+        // This is where the rect starts
+        const yStart = i * height + i *tpad;
+        const bottom = yStart + height - 20 - tpad/2;
+        const mid = yStart + (bottom - yStart)/2 + tpad
+        return <Group key={i}>
+            
+            <Rect width={width} height={height} fill={color} stroke={"black"} y={yStart}strokeWidth={5}/>
+            <Rect width={width} height={height *.4} fill={"red"} stroke={"black"} y={yStart} strokeWidth={5}/>
+            <Text width={width} text={name} fill={"white"} x={lpad}  y={i * height + (i+1) * tpad} fontSize={15} ></Text>
+            <Text width={width} text={"Kills: 0, Assists: 0, Deaths: 0"} fill={"white"} x={lpad}  y={mid} fontSize={15} ></Text>
+            <Text width={width} text={`AK${i+1} GS: HE,F,F,M 30/4`} fill={"white"} x={lpad}  y={bottom } fontSize={15} ></Text>
+        </Group>
+    }
+    
+}
+
 function DemoPlayback({file, map}:{file:String, map:String}){
         const [stats, setStats] = useState<MatchEvents>()
         const [size, setSize] = useState({ width: 0, height: 0 });
+        const [stageDim, setStageDim] = useState({ width: 0, height: 0 });
         const [round, setRound] =useState(1);
         const [isPlaying, setPlaying] = useState<PlaybackState>({playing: false, round_no:1, tick_no: 0});
-        const containerRef = useRef<HTMLDivElement>(null);
+        const playbackContainer = useRef<HTMLDivElement>(null);
         const round_begin_ticks = useRef<number[]>([]);
         const tickRef = useRef(0);
         const playerRef = useRef<Map<string, Konva.Group>>(null);
         // ROUND NO -> TICK NO -> PLAYBACK REF
         const playbackRef = useRef<PlayBackRef>(null);
         const layerRef = useRef<Konva.Layer>(null)
+        const groupPlayback = useRef<Konva.Group>(null);
+        const stageRef = useRef<Konva.Stage>(null)
         // const lastWep = useRef("")
         function getPlayerRef(){
             if(!playerRef.current){
@@ -107,13 +157,15 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                 }
             }
             getFetch()
+            
+            
             return () => { ignore = true}
         }, [file, round])
         // Handle Responsive Resizing
          useEffect(() => {
             const updateSize = () => {
-                    if (containerRef.current) {
-                        const parentElement = containerRef.current.parentElement;
+                    if (playbackContainer.current) {
+                        const parentElement = playbackContainer.current.parentElement;
                     if (!parentElement) return;
 
                     const availableHeight = parentElement.offsetHeight;
@@ -122,16 +174,17 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                     // Use the smaller dimension to keep it a square
                     const side = Math.min(availableHeight, availableWidth);                    
                     setSize({ width: side, height: side });
+                    setStageDim({width:playbackContainer.current?.getBoundingClientRect().width!, height:playbackContainer.current?.getBoundingClientRect().height!})
                 }
         };
 
         const observer = new ResizeObserver(updateSize);
-        if (containerRef.current) {
-            observer.observe(containerRef.current);
+        if (playbackContainer.current) {
+            observer.observe(playbackContainer.current);
         }
 
         updateSize(); 
-        const anim = new Konva.Animation((frame) => {
+        const anim = new Konva.Animation(() => {
             if (!isPlaying.playing) {
                 tickRef.current = isPlaying.tick_no
                 return
@@ -305,6 +358,8 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                         } else {
                             if (state.status == "EXPIRED" || state.status == "LANDED" || state.status == "ENDING") { return }                    
                             let gren = new Konva.Group({name:`${state.grenade} ${state.status}`, id:id})
+                            const mainGroup = layerRef.current!.findOne("#mainPlayer") as Konva.Group
+                            // console.log(mainGrou as Konva.Group)
                             let circl = new Konva.Circle({
                                     x: state.vector.X, y: state.vector.Y, radius: size.width * .01 , fill:"white"
                                 })
@@ -316,7 +371,8 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                             console.log(`CREATED AT ${tickRef.current} ${state.grenade} ${state.status}`)
                             console.log(gren)
                             map.set(id, gren)
-                            layerRef.current!.add(gren);
+                            // layerRef.current!.add(gren);
+                            mainGroup.add(gren)
                         }
                     })
                 }
@@ -333,9 +389,10 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                             let circl = new Konva.Circle({
                                 x : state.vertices[0].X , y: state.vertices[0].Y, radius: size.height * .02, fill:"orange"
                             })
+                            const mainGroup = layerRef.current!.findOne("#mainPlayer") as Konva.Group
                             fire.add(circl)
                             map.set(id, fire)
-                            layerRef.current!.add(fire)
+                            mainGroup.add(fire)
                         }
                     })
                 }
@@ -358,7 +415,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                 return (x-originX)/mapScale * size.width/1024
             }
             const newY = (y:number) => {
-                return (originY-y)/mapScale * size.height/1024
+                return (originY-y)/mapScale * stageDim.height/1024
             }
             const pos = Array.from(Object.entries(stats.round_events.player_positions))
             const grenades = Array.from(Object.entries(stats.round_events.grenade_events))
@@ -395,7 +452,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
             grenades.forEach(([tick, grenadeEvent]) => {
                 const grenade_info = Array.from(Object.entries(grenadeEvent))
                 const grenade_pos = new Map<string, GrenadeState>();
-                grenade_info.forEach(([grenid, grenstate],i) => {
+                grenade_info.forEach(([grenid, grenstate]) => {
                     const place:MapCoordinate = {
                         X:newX(grenstate.vector.X), Y:newY(grenstate.vector.Y)
                     }
@@ -434,9 +491,9 @@ function DemoPlayback({file, map}:{file:String, map:String}){
             })
             
         }
-        
+        const freeSpace = (stageDim.width-size.width)/2
     return <>
-        <div className="playbackGrid" >
+        <div id="playbackGrid" >
             {stats && Array.from(Object.entries(stats!.teams)).map(([teamname, players],i) => {
                 const player_names = Array.from(Object.values(players));
                 return (<>
@@ -461,41 +518,62 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                     </div>
                 </>
             }
-            <div className="playbackMap" ref={containerRef} >
-                <Stage width={size.width} height={size.height}>
-                    <Layer ref={layerRef}>
-                       <URLImage src={`/overviews/${map}.jpg`}  width={size.width} height={size.height}></URLImage>       
-                        { stats && 
-                            Array.from(Object.entries(stats!.round_events.player_info)).map(([playerid, playerinfo],i) => {
-                                const color = playerinfo.side == 2 ? "orange" : "blue"
-                                const pos = playbackRef.current!.player_pos.get(0)!.get(playerid)
-                                return (
-                                    <Group key={i} name={"player"} ref={(node) =>{
-                                                const map = getPlayerRef();
-                                                if (node != null) {
-                                                    map.set(playerid, node)
-                                                }
-                                                return () => {map.delete(playerid)}
-                                            }}>
-                                        <Circle
-                                            x={pos!.vector.X}
-                                            y={pos!.vector.Y}
-                                            fill={color}
-                                            radius={5}
-                                        />
-                                        <Text 
-                                            text={playerinfo.name} 
-                                            x={pos!.vector.X + 5} 
-                                            y={pos!.vector.Y - 3} 
-                                            fill="white" 
-                                            fontSize={10} 
-                                        />
-                                    </Group>
-                                );        
-                            })
-                        } 
-                        
+            <div id="playbackMap" ref={playbackContainer}>
+                <Stage ref={stageRef} width={stageDim.width} height={stageDim.height}>
+                    <Layer ref={layerRef}   width={stageDim.width} height={stageDim.height}>
+                        <Group x={freeSpace} id={"mainPlayer"}>
+                            <URLImage src={`/overviews/${map}.jpg`}  width={size.width} height={stageDim.height}></URLImage>     
+                       
+                                { stats && 
+                                    Array.from(Object.entries(stats!.round_events.player_info)).map(([playerid, playerinfo],i) => {
+                                        const color = playerinfo.side == 2 ? "orange" : "blue"
+                                        const pos = playbackRef.current!.player_pos.get(0)!.get(playerid)
+                                        return (
+                                            <Group key={i} name={"player"} ref={(node) =>{
+                                                        const map = getPlayerRef();
+                                                        if (node != null) {
+                                                            map.set(playerid, node)
+                                                        }
+                                                        return () => {map.delete(playerid)}
+                                                    }}>
+                                                <Circle
+                                                    x={pos!.vector.X}
+                                                    y={pos!.vector.Y}
+                                                    fill={color}
+                                                    radius={5}
+                                                />
+                                                <Text 
+                                                    text={playerinfo.name} 
+                                                    x={pos!.vector.X + 5} 
+                                                    y={pos!.vector.Y - 3} 
+                                                    fill="white" 
+                                                    fontSize={10} 
+                                                />
+                                            </Group>
+                                        );        
+                                    })
+                                } 
+                        </Group>                   
+                       <Group x={0}>
+                            {
+                                playerecords.filter(([_,__,___,____,side]) => {
+                                    return side == 2
+                                }).map(([_,name],i) => {
+                                    return playerBoxInfo({width:freeSpace, height:size.height/10, tpad:10, lpad:10, i:i, name:name})                                    
+                                })
+                            }
+                        </Group>
+                        <Group x={stageDim.width-freeSpace}>
+                            {
+                                playerecords.filter(([_,__,___,____,side]) => {
+                                    return side != 2
+                                }).map(([_,name],i) => {    
+                                    return playerBoxInfo({width:freeSpace, height:size.height/10, tpad:10, lpad:10, i:i, name:name})
+                                })
+                            }
+                        </Group>
                     </Layer>
+                    
                 </Stage>
             </div>
             

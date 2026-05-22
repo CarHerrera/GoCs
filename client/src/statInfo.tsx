@@ -23,7 +23,7 @@ interface PlayerStats{
 
 function NavBar({setActive}:{setActive :React.Dispatch<React.SetStateAction<number>>}){
     return <>
-        <ul>
+        <ul style={{width:"100%"}}>
             <li onClick={() => setActive(1)}>Overview</li>
             <li onClick={() => setActive(2)}>Advanced Stats</li>
             <li onClick={() => setActive(3)}>HeatMaps</li>

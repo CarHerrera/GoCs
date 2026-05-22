@@ -99,11 +99,20 @@ func getDemoPath() string {
 	return os.Getenv("DEMO_PATH")
 }
 
-func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
+func recoverParseToEnd(p dem.Parser) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("internal parser panic: %v", r)
+		}
+	}()
+	return p.ParseToEnd()
+}
+
+func parse_demo_stats(fileName string, MATCHID int) (BaseDemo, error) {
 	demo := getDemoPath() + fileName
 	file, err := os.Open(demo)
 	if err != nil {
-		panic(err)
+		return BaseDemo{}, err
 	}
 	defer file.Close()
 	info, err := file.Stat()
@@ -117,7 +126,7 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 	p.RegisterNetMessageHandler(func(msg *msg.CSVCMsg_ServerInfo) {
 		GameMap = *msg.MapName
 	})
-	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
+	p.RegisterEventHandler(func(e events.MatchStartedChanged) error {
 		GS := p.GameState()
 		ctside := GS.TeamCounterTerrorists()
 		tside := GS.TeamTerrorists()
@@ -144,10 +153,10 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 						if err == sql.ErrNoRows {
 							_, err := DB.Exec("INSERT INTO TEAMS (TEAMNAME) VALUES (?)", team1Name)
 							if err != nil {
-								panic(err)
+								return err
 							}
 						} else {
-							panic(err)
+							return err
 						}
 					}
 				}
@@ -180,10 +189,10 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 						if err == sql.ErrNoRows {
 							_, err := DB.Exec("INSERT INTO TEAMS (TEAMNAME) VALUES (?)", team1Name)
 							if err != nil {
-								panic(err)
+								return err
 							}
 						} else {
-							panic(err)
+							return err
 						}
 					}
 				}
@@ -199,6 +208,7 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 
 			}
 		}
+		return nil
 	})
 	// Included the following 3 to help debug why trackers weren't working.
 	p.RegisterEventHandler(func(h events.TeamSideSwitch) {
@@ -295,9 +305,8 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 			//
 		}
 	})
-	err = p.ParseToEnd()
-	if err != nil {
-		panic(err)
+	if err := recoverParseToEnd(p); err != nil {
+		return BaseDemo{}, err
 	}
 	_, err = DB.Exec(`
 		UPDATE MATCHES 
@@ -311,7 +320,7 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 		TeamStats[1].ClanName, TeamStats[1].TScore, TeamStats[1].CTScore, TeamStats[1].EndScore, GameMap, MATCHID)
 
 	if err != nil {
-		panic(err)
+		return BaseDemo{}, err
 	}
 	for i, team := range TeamStats {
 		for _, player := range team.PlayingPlayers {
@@ -320,21 +329,21 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 				if err == sql.ErrNoRows {
 					_, err := DB.Exec("INSERT INTO PLAYERS (PLAYERID,PLAYERNAME,TEAMNAME) VALUES (?,?,?)", player.ID, player.Name, TeamStats[i].ClanName)
 					if err != nil {
-						panic(err)
+						return BaseDemo{}, err
 					}
 				} else {
-					panic(err)
+					return BaseDemo{}, err
 				}
 			}
 
 			_, err := DB.Exec("INSERT INTO MATCH_STATS (MATCHID,PLAYERID,TOTAL_KILLS,TOTAL_DEATHS,TOTAL_ASSISTS) VALUES (?,?,?,?,?)", MATCHID, player.ID, player.Stats.Kills, player.Stats.Deaths, player.Stats.Assists)
 			if err != nil {
-				panic(err)
+				return BaseDemo{}, err
 			}
 		}
 	}
 	if err != nil {
-		panic(err)
+		return BaseDemo{}, err
 	}
 	infoSend := BaseDemo{
 		FileName:  info.Name(),
@@ -343,7 +352,7 @@ func parse_demo_stats(fileName string, MATCHID int) BaseDemo {
 		Map:       GameMap,
 		TeamStats: TeamStats,
 	}
-	return infoSend
+	return infoSend, nil
 }
 
 func Parse2D(filename string) MatchEvents {
@@ -352,7 +361,10 @@ func Parse2D(filename string) MatchEvents {
 	if err != nil {
 		panic(err)
 	}
-	p := dem.NewParser(file)
+	p := dem.NewParserWithConfig(file, dem.ParserConfig{
+		MsgQueueBufferSize:        0,
+		IgnorePacketEntitiesPanic: true,
+	})
 	defer p.Close()
 	defer file.Close()
 	var matchid int

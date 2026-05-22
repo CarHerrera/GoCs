@@ -25,7 +25,7 @@ type SQLMatch struct {
 
 func TestConnect(t *testing.T) {
 	_ = godotenv.Load()
-	fileName := "furia-vs-vitality-m1-mirage.dem"
+	fileName := "NoAaronAlexMirage.dem"
 	dbUser := os.Getenv("DB_USER")
 	dbPassword := os.Getenv("DB_PASSWORD")
 	// log.Printf("%s %s", dbUser, dbPassword)

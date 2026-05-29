@@ -132,11 +132,9 @@ func main() {
 			return c.SendStatus(fiber.StatusNotFound)
 		}
 		log.Printf("%s", c.Params("demoName"))
-		log.Printf("%s", c.Params("roundNo"))
 		if err := DB.QueryRow("SELECT MATCHID, MAP, PARSED_2D, (TEAM_A_FINAL_SCORE+ TEAM_B_FINAL_SCORE) as ROUND_TOTAL FROM MATCHES WHERE DEMO_NAME = ?", c.Params("demoName")).Scan(&matchid, &gamemap, &parsed2d, &rounds); err != nil {
 			if err == sql.ErrNoRows {
 				log.Print("SQL ERROR")
-				log.Printf("%s", c.Params("roundNo"))
 				return c.SendStatus(fiber.StatusNotFound)
 			} else {
 				panic(err)
@@ -146,6 +144,7 @@ func main() {
 			if (parsed2d) == 1 {
 				var me MatchEvents
 				// fmt.Print("HAS BEEN PARSED")
+				log.Printf("GETTING SQL RESULTS")
 				query := `
 				SELECT p.PLAYERNAME, p.PLAYERID, p.TEAMNAME as TEAM 
 				FROM PLAYERS as p 
@@ -168,11 +167,13 @@ func main() {
 				}
 				me.MapMeta = ex.GetMapMetadata(gamemap)
 
-				query = `SELECT p.PLAYERID, p.PLAYERNAME, re.WEAPON, re.XPOS, re.YPOS, re.ZPOS, re.TICK, rp.SIDE 
-					from ROUND_EVENTS as re 
-					JOIN PLAYERS p on p.PLAYERID = re.PLAYERID 
-					JOIN ROUND_PARTICIPANTS rp ON re.MATCHID = rp.MATCHID AND re.ROUND_NO = rp.ROUND_NO AND re.PLAYERID = rp.PLAYERID 
-					WHERE re.MATCHID = ? AND re.ROUND_NO = ? ORDER BY TICK ASC`
+				query = `SELECT p.PLAYERID, p.PLAYERNAME, pe.HP, pe.WEAPON, pe.HAS_BOMB, pe.P_ACTION,
+							pe.KILLS, pe.ASSIST, pe.DEATHS, pe.ARMOR, pe.DINERO,
+							pe.XPOS, pe.YPOS, pe.ZPOS, pe.TICK, rp.SIDE
+					from PLAYER_EVENTS as pe 
+					JOIN PLAYERS p on p.PLAYERID = pe.PLAYERID 
+					JOIN ROUND_PARTICIPANTS rp ON pe.MATCHID = rp.MATCHID AND pe.ROUND_NO = rp.ROUND_NO AND pe.PLAYERID = rp.PLAYERID 
+					WHERE pe.MATCHID = ? AND pe.ROUND_NO = ? ORDER BY TICK ASC`
 				var RE RoundEvents
 				RE.PlayerPositions = make(map[int]map[int64]PlayerState)
 				RE.PlayerNames = make(map[int64]PlayerInfo)
@@ -184,10 +185,12 @@ func main() {
 				}
 				for rows.Next() {
 					var Name, weapon string
-					var tick, side int
+					var hasBomb bool
+					var tick, side, hp, kills, assist, deaths, armor, dinero int
+					var action PlayerAction
 					var x, y, z float64
 					var playerid int64
-					rows.Scan(&playerid, &Name, &weapon, &x, &y, &z, &tick, &side)
+					rows.Scan(&playerid, &Name, &hp, &weapon, &hasBomb, &action, &kills, &assist, &deaths, &armor, &dinero, &x, &y, &z, &tick, &side)
 					position := r3.Vector{X: x, Y: y, Z: z}
 					if _, ok := RE.PlayerNames[playerid]; !ok {
 						RE.PlayerNames[playerid] = PlayerInfo{Name: Name, Side: side}
@@ -195,22 +198,13 @@ func main() {
 					// No Tick has been created
 					if len(RE.PlayerPositions[tick]) == 0 {
 						RE.PlayerPositions[tick] = make(map[int64]PlayerState)
-						RE.PlayerPositions[tick][playerid] = PlayerState{
-							Position: position, Weapon: weapon,
-						}
-					} else {
-						RE.PlayerPositions[tick][playerid] = PlayerState{
-							Position: position, Weapon: weapon,
-						}
 					}
-					// if grenade != "" {
-					// 	if len(RE.GrenadeEvents[tick]) == 0 {
-					// 		RE.GrenadeEvents[tick] = make(map[int64]GrenadeState)
-					// 	}
-					// 	RE.GrenadeEvents[tick][grenadeid] = GrenadeState{
-					// 		Position: position, Grenade: grenade, ThrownByName: RE.PlayerNames[gthrowid].Name, ThrownByid: int64(gthrowid),
-					// 	}
-					// }
+					RE.PlayerPositions[tick][playerid] = PlayerState{
+						Position: position, Weapon: weapon, HP: hp,
+						Kills: kills, Assists: assist, Deaths: deaths,
+						Armor: armor, Money: dinero, HasBomb: hasBomb,
+						Action: action,
+					}
 
 					defer rows.Close()
 				}
@@ -262,7 +256,9 @@ func main() {
 				// fmt.Printf("Out:%v", me.RoundPositions[1])
 				return c.Status(200).JSON(me)
 			} else {
+				log.Printf("PARSING")
 				info := Parse2D(c.Params("demoName"))
+				log.Printf("DONE")
 				return c.Status(200).JSON(info)
 			}
 
@@ -274,17 +270,18 @@ func main() {
 		var parsed int
 		if err := DB.QueryRow("SELECT DEMO_NAME, MAP, MATCHID, PARSED_STATS FROM MATCHES WHERE DEMO_NAME = ?", demo).Scan(
 			&row.FileName, &row.Map, &row.ID, &parsed); err != nil {
-
+			log.Printf("SQL ERROR")
 			return c.Status(500).JSON(fiber.Map{
 				"message": "Failed to SQL Error",
 				"success": "false",
 			})
 		} else {
-			// log.Printf("File found in DB. MATCH ID: %v", row.ID)
+			log.Printf("File found in DB. MATCH ID: %v", row.ID)
 			if parsed == 0 {
+				log.Printf("Parsing Stats")
 				demo_stats, err := parse_demo_stats(demo, row.ID)
-				log.Printf("%v failed to parse.", demo)
 				if err != nil {
+					log.Printf("%v failed to parse.", demo)
 					return c.Status(500).JSON(fiber.Map{
 						"message": "Failed to parse error",
 						"success": "false",
@@ -292,6 +289,7 @@ func main() {
 				}
 				return c.Status(200).JSON(demo_stats.TeamStats)
 			} else {
+				log.Printf("Grabbing from SQL")
 				query := `
 					SELECT 
 						m.TEAM_A_NAME,

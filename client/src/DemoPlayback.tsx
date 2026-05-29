@@ -2,14 +2,24 @@ import { useEffect, useState, useRef } from "react";
 import { Layer, Stage, Text, Circle, Group, Rect} from 'react-konva';
 import { URLImage } from "./URLImage";
 import Konva from "konva";
-// interface Vector {
-//     X: number;
-//     Y: number;
-//     Z: number;
-// }
+const PlayerAction = {
+    isMoving: 1,
+    beginPlanting: 2,
+    donePlanting: 3,
+    abortedPlant: 4,
+} as const;
+type PlayerAction = typeof PlayerAction[keyof typeof PlayerAction];
 interface PlayerState {
     vector: MapCoordinate;
     weapon: string;
+    hp: number;
+    kills: number;
+    assists: number;
+    deaths: number;
+    armor: number;
+    dinero: number;
+    action: PlayerAction;
+    hasBomb: boolean;
 }
 interface GrenadeState{
     vector: MapCoordinate;
@@ -64,8 +74,21 @@ interface PlayBackRef{
     fire_vertices: Map<number, Map<string, FireState>>;
 }
 
-function playerBoxInfo({width, height, tpad, lpad, i, name}:{width:number, height:number, tpad:number,lpad:number, i:number, name:string}){
+interface PlayerBox {
+    width: number
+    height: number
+    tpad: number
+    lpad: number
+    i: number
+    name: string
+    playerid: string
+    weapon: string
+    hp: number
+    hasBomb: boolean
+}
+function playerBoxInfo({playerBox, hud}:{playerBox:PlayerBox, hud: Map<string, Konva.Group>}){
     let color ="white"
+    const {width, height, tpad, lpad, i, name, playerid, weapon} = playerBox
     switch (i){
         case 0:
             color="green"
@@ -77,7 +100,7 @@ function playerBoxInfo({width, height, tpad, lpad, i, name}:{width:number, heigh
             color="purple"
         break;
         case 3:
-            color="yellow"
+            color="black"
         break;
         case 4:
             color="orange"
@@ -86,26 +109,71 @@ function playerBoxInfo({width, height, tpad, lpad, i, name}:{width:number, heigh
     }
     if (i == 0) {
         const bottom = height - 20 - tpad/2;
-        return <Group key={i}>
-            <Rect width={width} height={height} fill={color} stroke={"black"} strokeWidth={5}/>
-            <Rect width={width} height={height *.4} fill={"red"} stroke={"black"} strokeWidth={5}/>
-            <Text width={width} text={name} fill={"white"} x={lpad}  y={tpad} fontSize={15} ></Text>
-            <Text width={width} text={"Kills: 0, Assists: 0, Deaths: 0"} fill={"white"} x={lpad}  y={bottom/2 + tpad} fontSize={15} ></Text>
-            <Text width={width} text={"AK1 GS: HE,F,F,M 30/4"} fill={"white"} x={lpad}  y={bottom} fontSize={15} ></Text>
-        </Group>
+        if (playerBox.hasBomb) {
+            return <Group key={i} name={playerid} ref={(node) => {
+                if (node != null){
+                    hud.set(playerid, node)
+                }
+                
+            }}>
+                <Rect width={width} height={height} fill={color} stroke={"black"} strokeWidth={5}/>
+                <Rect width={width} name="hpbar" height={height *.4} fill={"red"} stroke={"black"} strokeWidth={5}/>
+                <Rect name="bomb"  fill={"white"} width={width/10} height={height/10} x={width - (width/10) - lpad}  y={bottom +tpad/2} ></Rect>
+                <Text name="hp" text={`${playerBox.hp}`} fill={"white"} x={width - lpad * 3}  y={tpad} fontSize={12} ></Text>
+                <Text width={width} name="name" text={name} fill={"white"} x={lpad}  y={tpad} fontSize={12} ></Text>
+                <Text width={width} name="stats" text={"Kills: 0, Assists: 0, Deaths: 0"} fill={"white"} x={lpad}  y={bottom/2 + tpad} fontSize={12} ></Text>
+                <Text width={width} name="inv" text={`${weapon} HE,F,F,M 30/4`} fill={"white"} x={lpad}  y={bottom} fontSize={12} ></Text>
+            </Group>
+        } else {
+            return <Group key={i} name={playerid} ref={(node) => {
+                if (node != null){
+                    hud.set(playerid, node)
+                }
+                
+            }}>
+                <Rect width={width} height={height} fill={color} stroke={"black"} strokeWidth={5}/>
+                <Rect width={width} name="hpbar" height={height *.4} fill={"red"} stroke={"black"} strokeWidth={5}/>
+                <Text name="hp" text={`${playerBox.hp}`} fill={"white"} x={width - lpad * 3}  y={tpad} fontSize={12} ></Text>
+                <Text width={width} name="name" text={name} fill={"white"} x={lpad}  y={tpad} fontSize={12} ></Text>
+                <Text width={width} name="stats" text={"Kills: 0, Assists: 0, Deaths: 0"} fill={"white"} x={lpad}  y={bottom/2 + tpad} fontSize={12} ></Text>
+                <Text width={width} name="inv" text={`${weapon} HE,F,F,M 30/4`} fill={"white"} x={lpad}  y={bottom} fontSize={12} ></Text>
+            </Group>
+        }
+        
     } else {
         // This is where the rect starts
         const yStart = i * height + i *tpad;
         const bottom = yStart + height - 20 - tpad/2;
         const mid = yStart + (bottom - yStart)/2 + tpad
-        return <Group key={i}>
-            
-            <Rect width={width} height={height} fill={color} stroke={"black"} y={yStart}strokeWidth={5}/>
-            <Rect width={width} height={height *.4} fill={"red"} stroke={"black"} y={yStart} strokeWidth={5}/>
-            <Text width={width} text={name} fill={"white"} x={lpad}  y={i * height + (i+1) * tpad} fontSize={15} ></Text>
-            <Text width={width} text={"Kills: 0, Assists: 0, Deaths: 0"} fill={"white"} x={lpad}  y={mid} fontSize={15} ></Text>
-            <Text width={width} text={`AK${i+1} GS: HE,F,F,M 30/4`} fill={"white"} x={lpad}  y={bottom } fontSize={15} ></Text>
-        </Group>
+        if (playerBox.hasBomb) {
+            return <Group key={i} name={playerid} ref={(node) => {
+                if (node != null){
+                    hud.set(playerid, node)
+                }
+                
+            }}>
+                <Rect width={width} height={height} fill={color} stroke={"black"} y={yStart}strokeWidth={5}/>
+                <Rect width={width} name="hpbar" height={height *.4} fill={"red"} stroke={"black"} y={yStart} strokeWidth={5}/>
+                <Text name="hp" text={`${playerBox.hp}`} fill={"white"} x={width - lpad * 3}  y={i * height + (i+1) * tpad} fontSize={12} ></Text>
+                <Rect name="bomb"  fill={"white"} width={width/10} height={height/10} x={width - (width/10) - lpad}  y={bottom + tpad/2} ></Rect>
+                <Text width={width} name="name" text={name} fill={"white"} x={lpad}  y={i * height + (i+1) * tpad} fontSize={12} ></Text>
+                <Text width={width} name="stats" text={"Kills: 0, Assists: 0, Deaths: 0"} fill={"white"} x={lpad}  y={mid} fontSize={12} ></Text>
+                <Text width={width} name="inv" text={`${weapon} HE,F,F,M 30/4`} fill={"white"} x={lpad}  y={bottom } fontSize={12} ></Text>
+            </Group>
+        } else {
+            return <Group key={i} name={playerid} ref={(node) => {
+                if (node != null){
+                    hud.set(playerid, node)
+                }
+            }}>
+                <Rect width={width} height={height} fill={color} stroke={"black"} y={yStart}strokeWidth={5}/>
+                <Rect width={width} name="hpbar" height={height *.4} fill={"red"} stroke={"black"} y={yStart} strokeWidth={5}/>
+                <Text name="hp" text={`${playerBox.hp}`} fill={"white"} x={width - lpad * 3}  y={i * height + (i+1) * tpad} fontSize={12} ></Text>
+                <Text width={width} name="name" text={name} fill={"white"} x={lpad}  y={i * height + (i+1) * tpad} fontSize={12} ></Text>
+                <Text width={width} name="stats" text={"Kills: 0, Assists: 0, Deaths: 0"} fill={"white"} x={lpad}  y={mid} fontSize={12} ></Text>
+                <Text width={width} name="inv" text={`${weapon} HE,F,F,M 30/4`} fill={"white"} x={lpad}  y={bottom } fontSize={12} ></Text>
+            </Group>
+        }
     }
     
 }
@@ -118,13 +186,14 @@ function DemoPlayback({file, map}:{file:String, map:String}){
         const [isPlaying, setPlaying] = useState<PlaybackState>({playing: false, round_no:1, tick_no: 0});
         const playbackContainer = useRef<HTMLDivElement>(null);
         const round_begin_ticks = useRef<number[]>([]);
-        const tickRef = useRef(0);
+        // const progressRef = useRef();
+        const tickRef = useRef(isPlaying.tick_no);
         const playerRef = useRef<Map<string, Konva.Group>>(null);
+        const hudRef = useRef<Map<string, Konva.Group>>(new Map());
         // ROUND NO -> TICK NO -> PLAYBACK REF
         const playbackRef = useRef<PlayBackRef>(null);
         const layerRef = useRef<Konva.Layer>(null)
-        const groupPlayback = useRef<Konva.Group>(null);
-        const stageRef = useRef<Konva.Stage>(null)
+        
         // const lastWep = useRef("")
         function getPlayerRef(){
             if(!playerRef.current){
@@ -238,14 +307,14 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                                     circle.radius(size.height * .035);
                                                 }
                                             })
-                                            console.log(`CHANGED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
+                                            // console.log(`CHANGED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
                                         }
 
                                         if (gren_pos.status == "EXPIRED" || gren_pos.status == "LANDED"){
                                             group_object.destroyChildren()              
                                             playerRef.current?.delete(itemid)
                                             getPlayerRef().delete(itemid)
-                                            console.log(`DELETED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
+                                            // console.log(`DELETED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
                                         }
                                         
                                         
@@ -273,12 +342,12 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                         group_object.destroyChildren()
                                         playerRef.current!.delete(itemid)
                                         getPlayerRef().delete(itemid)
-                                        console.log(`DELETED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
+                                        // console.log(`DELETED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
                                     }
                                 }
                             }
                             // FIRE
-                            if(group_object.hasName("STARTING")){
+                            else if(group_object.hasName("STARTING")){
                                 if (playbackRef.current!.fire_vertices.has(tickRef.current)){
                                     const fire_info = playbackRef.current!.fire_vertices.get(tickRef.current)!.get(itemid)
                                     if (fire_info != null){
@@ -344,11 +413,48 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                         }
                                     }
                                 }
+                            } else if (group_object.hasName("DROPPED")){
+                                if(playbackRef.current!.grenade_pos.has(tickRef.current)){
+                                    const gren_pos = playbackRef.current!.grenade_pos.get(tickRef.current)!.get(itemid)
+                                    if (gren_pos != null ){
+                                        switch (gren_pos.status) {
+                                            case "GRABBED":
+                                                group_object.destroyChildren()
+                                                playerRef.current!.delete(itemid)
+                                                getPlayerRef().delete(itemid)
+                                            break;
+                                            default:
+                                            return
+                                        }
+                                        
+                                        // console.log(`DELETED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
+                                    }
+                                }
+                            } else if (group_object.hasName("PLANTED")){
+                                if(playbackRef.current!.grenade_pos.has(tickRef.current)){
+                                    const gren_pos = playbackRef.current!.grenade_pos.get(tickRef.current)!.get(itemid)
+                                    if (gren_pos != null ){
+                                        switch (gren_pos.status) {
+                                            case "DEFUSED":
+                                                group_object.getChildren().forEach((g) => {
+                                                    if (g.className == "Rect"){
+                                                        const bomb = g as Konva.Rect
+                                                        bomb.fill("GREEN")
+                                                    }
+                                                })
+                                                
+                                            break;
+                                            default:
+                                            return
+                                        }
+                                        
+                                        // console.log(`DELETED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
+                                    }
+                                }
                             }
-                            
                         }
-                        // Check if a grenade needs to be created   
                 })
+                // Check if a grenade needs to be created   
                 if (playbackRef.current!.grenade_pos.has(tickRef.current)) {
                     const map = getPlayerRef()
                     const tickMap = playbackRef.current!.grenade_pos.get(tickRef.current)
@@ -356,23 +462,51 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                         if (map.has(id)){
                             return;
                         } else {
-                            if (state.status == "EXPIRED" || state.status == "LANDED" || state.status == "ENDING") { return }                    
-                            let gren = new Konva.Group({name:`${state.grenade} ${state.status}`, id:id})
+                            if (state.status == "EXPIRED" || state.status == "LANDED" || state.status == "ENDING" || state.status == "GRABBED") { return } 
                             const mainGroup = layerRef.current!.findOne("#mainPlayer") as Konva.Group
-                            // console.log(mainGrou as Konva.Group)
-                            let circl = new Konva.Circle({
-                                    x: state.vector.X, y: state.vector.Y, radius: size.width * .01 , fill:"white"
+                            if (state.grenade == "BOMB") {
+                                // console.log("BOMB NEEDS TO BE ADDED TO MAP")
+                                let bomb = new Konva.Group({name:`${state.grenade} ${state.status}`, id:id})
+                                let rect = new Konva.Rect({
+                                        x: state.vector.X, y: state.vector.Y, width:(stageDim.width-size.width)/20, height:size.height/100
                                 })
-                            let label = new Konva.Text({
-                                    x: state.vector.X + 5, y: state.vector.Y - 3, text: state.grenade,
-                                    fill:"white" , fontSize:10 
-                            })
-                            gren.add(circl, label)
-                            console.log(`CREATED AT ${tickRef.current} ${state.grenade} ${state.status}`)
-                            console.log(gren)
-                            map.set(id, gren)
-                            // layerRef.current!.add(gren);
-                            mainGroup.add(gren)
+                                switch (state.status) {
+                                    case "DROPPED":
+                                        rect.fill("white")
+                                        bomb.add(rect)
+                                        map.set(id, bomb)
+                                        mainGroup.add(bomb)
+                                    break;
+                                    case "PLANTED":
+                                        rect.fill("red")
+                                        bomb.add(rect)
+                                        map.set(id, bomb)
+                                        mainGroup.add(bomb)
+                                    break;
+                                    default:
+                                        console.log(`${state.grenade} ${state.status} has not been handled yet.`)
+                                    return;
+                                }
+                                
+                            } else {
+                                let gren = new Konva.Group({name:`${state.grenade} ${state.status}`, id:id})
+                                
+                                // console.log(mainGrou as Konva.Group)
+                                let circl = new Konva.Circle({
+                                        x: state.vector.X, y: state.vector.Y, radius: size.width * .01 , fill:"white"
+                                    })
+                                let label = new Konva.Text({
+                                        x: state.vector.X + 5, y: state.vector.Y - 3, text: state.grenade,
+                                        fill:"white" , fontSize:10 
+                                })
+                                gren.add(circl, label)
+                                // console.log(`CREATED AT ${tickRef.current} ${state.grenade} ${state.status}`)
+                                // console.log(gren)
+                                map.set(id, gren)
+                                // layerRef.current!.add(gren);
+                                mainGroup.add(gren)
+                            }
+                            
                         }
                     })
                 }
@@ -396,15 +530,94 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                         }
                     })
                 }
+                if (hudRef.current != null) {
+                    // console.log("IN HUD")
+                    // console.log(hudRef.current)
+                    hudRef.current!.forEach((g, id) => {
+                        if (playbackRef.current!.player_pos.has(tickRef.current)){
+                            const p = playbackRef.current!.player_pos.get(tickRef.current)?.get(id)
+                            if (p != null){
+                                // console.log("CHANGING")
+                                let y;
+                                let node = g.findOne((n:Konva.Node) => {
+                                    return n.getAttr("name") == "inv"
+                                })
+                                let text = node as Konva.Text
+                                y = text.y()
+                                text.text(`${p.weapon} GS: HE,F,F,M 30/4`)
+                                node = g.findOne((n:Konva.Node) => {
+                                    return n.getAttr("name") == "stats"
+                                })
+                                text = node as Konva.Text
+                                text.text(`Kills: ${p.kills}, Assists: ${p.assists}, Deaths: ${p.deaths}`)
+                                node = g.findOne((n:Konva.Node) => {
+                                    return n.getAttr("name") == "hpbar"
+                                })
+                                const hp = node as Konva.Rect
+                                hp.width(p.hp/100 * (stageDim.width-size.width)/2)
+                                node = g.findOne((n:Konva.Node) => {
+                                    return n.getAttr("name") == "hp"
+                                })
+                                text = node as Konva.Text
+                                text.text(`${p.hp}`)
+                                node = g.findOne((n:Konva.Node) => {
+                                    return n.getAttr("name") == "bomb"
+                                })
+                                if (p.hasBomb){
+                                    if (node == null){
+                                        let bomb = new Konva.Rect()
+                                        // const freeSpace:number = (stageDim.width-size.width)/2
+                                        // width:freeSpace, height:size.height/10, tpad:10, lpad:10, i:i, name:name, playerid:playerid,weapon:wep, hp:hp, hasBomb:bomb
+                                        // <Rect name="bomb"  fill={"white"} width={width/10} height={height/10} x={width - (width/10) - lpad}  y={bottom +tpad/2} ></Rect>
+                                        // <Rect name="bomb"  fill={"white"} width={width/10} height={height/10} x={width - (width/10) - lpad}  y={bottom + tpad/2} ></Rect>
+                                        const w = (stageDim.width-size.width)/2
+                                        bomb.y(y+5)
+                                        bomb.width(w / 10)
+                                        bomb.height(size.height/100)
+                                        bomb.x(w- (w/10) - 5)
+                                        bomb.fill("white")
+                                        bomb.name("bomb")
+                                        g.add(bomb)
+                                    }
+                                } else {
+                                    if (node != null){
+                                        node.destroy()
+                                    }
+                                }
+                            } else {
+                                let node = g.findOne((n:Konva.Node) => {
+                                    return n.getAttr("name") == "hpbar"
+                                })
+                                const hp = node as Konva.Rect
+                                hp.width(0)
+                                node = g.findOne((n:Konva.Node) => {
+                                    return n.getAttr("name") == "hp"
+                                })
+                                const text = node as Konva.Text
+                                text.text(`${0}`)
+                                node = g.findOne((n:Konva.Node) => {
+                                    return n.getAttr("name") == "bomb"
+                                })
+                                if (node != null){
+                                    node.destroy()
+                                }
+                            }
+                        } 
+                    })
+                }
             }
+
+            
+
         }, layerRef.current);
         anim.start()       
         return () => {
             observer.disconnect()
             anim.stop()
         };
-        }, [isPlaying.playing, round]);  
-        let playerecords : [string, string, number, number, number][]  = []
+        }, [isPlaying.playing, round]);
+        // ID, NAME, X, Y, SIDE, WEAPON
+        let playerecords : [string, string, number, number, number, string, number, boolean][]  = []
         if (stats != null){
             console.log(stats)
             const {pos_x, pos_y, scale} = stats.map
@@ -434,7 +647,8 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                         X:newX(state.vector.X), Y:newY(state.vector.Y)
                     }
                     const player_state: PlayerState = {
-                        vector: place, weapon: state.weapon
+                        vector: place, weapon: state.weapon, hp:state.hp, kills: state.kills, assists:state.assists, deaths:state.deaths, armor:state.armor, dinero:state.dinero,
+                        action: state.action, hasBomb: state.hasBomb
                     }
                     player_pos.set(playerid, player_state)
                 })
@@ -487,11 +701,11 @@ function DemoPlayback({file, map}:{file:String, map:String}){
             const player_info = Array.from(Object.entries(stats.round_events.player_info))
             player_info.forEach(([playerid, playername]) => {
                 const playerpos = playbackRef.current!.player_pos.get(0)?.get(playerid)
-                playerecords.push([playerid, playername.name, playerpos!.vector.X, playerpos!.vector.Y, playername.side ])
+                playerecords.push([playerid, playername.name, playerpos!.vector.X, playerpos!.vector.Y, playername.side, playerpos!.weapon, playerpos!.hp, playerpos!.hasBomb])
             })
             
         }
-        const freeSpace = (stageDim.width-size.width)/2
+        const freeSpace:number = (stageDim.width-size.width)/2
     return <>
         <div id="playbackGrid" >
             {stats && Array.from(Object.entries(stats!.teams)).map(([teamname, players],i) => {
@@ -519,15 +733,15 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                 </>
             }
             <div id="playbackMap" ref={playbackContainer}>
-                <Stage ref={stageRef} width={stageDim.width} height={stageDim.height}>
-                    <Layer ref={layerRef}   width={stageDim.width} height={stageDim.height}>
+                <Stage  width={stageDim.width} height={stageDim.height}>
+                    <Layer ref={layerRef}   >
                         <Group x={freeSpace} id={"mainPlayer"}>
                             <URLImage src={`/overviews/${map}.jpg`}  width={size.width} height={stageDim.height}></URLImage>     
                        
                                 { stats && 
                                     Array.from(Object.entries(stats!.round_events.player_info)).map(([playerid, playerinfo],i) => {
                                         const color = playerinfo.side == 2 ? "orange" : "blue"
-                                        const pos = playbackRef.current!.player_pos.get(0)!.get(playerid)
+                                        const pos = playbackRef.current!.player_pos.get(tickRef.current)!.get(playerid)
                                         return (
                                             <Group key={i} name={"player"} ref={(node) =>{
                                                         const map = getPlayerRef();
@@ -553,22 +767,29 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                         );        
                                     })
                                 } 
-                        </Group>                   
-                       <Group x={0}>
+                        </Group>              
+                           {/* These are the player info boxes  */}
+                       <Group x={0} >
                             {
-                                playerecords.filter(([_,__,___,____,side]) => {
+                                playerecords.filter(([,,,,side]) => {
                                     return side == 2
-                                }).map(([_,name],i) => {
-                                    return playerBoxInfo({width:freeSpace, height:size.height/10, tpad:10, lpad:10, i:i, name:name})                                    
+                                }).map(([playerid,name,,,,wep,hp, bomb] ,i) => {
+                                    const info:PlayerBox = {
+                                        width:freeSpace, height:size.height/10, tpad:10, lpad:10, i:i, name:name, playerid:playerid,weapon:wep, hp:hp, hasBomb:bomb
+                                    }
+                                    return playerBoxInfo({playerBox:info, hud:hudRef.current})
                                 })
                             }
                         </Group>
-                        <Group x={stageDim.width-freeSpace}>
+                        <Group x={stageDim.width-freeSpace} >
                             {
-                                playerecords.filter(([_,__,___,____,side]) => {
+                                playerecords.filter(([,,,,side]) => {
                                     return side != 2
-                                }).map(([_,name],i) => {    
-                                    return playerBoxInfo({width:freeSpace, height:size.height/10, tpad:10, lpad:10, i:i, name:name})
+                                }).map(([playerid,name,,,,wep,hp, bomb],i) => {    
+                                    const info:PlayerBox = {
+                                        width:freeSpace, height:size.height/10, tpad:10, lpad:10, i:i, name:name, playerid:playerid,weapon:wep, hp:hp, hasBomb:bomb
+                                    }
+                                    return playerBoxInfo({playerBox:info, hud:hudRef.current})
                                 })
                             }
                         </Group>
@@ -595,8 +816,18 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                     })
                     }}>Back</button>
                 <button onClick={() => {
-                        console.log(`TICK:${tickRef.current}`)
-                        setPlaying({...isPlaying, tick_no:tickRef.current, playing: !isPlaying.playing}) 
+                        console.log(`BEFORE ANY ACTION TICK:${tickRef.current}`)
+                        // setPlaying({...isPlaying, tick_no:tickRef.current, playing: !isPlaying.playing}) 
+                        // Going from Playing to Pause
+                        if (isPlaying.playing == true){
+                            console.log(`PAUSE TICK:${tickRef.current}`)
+                            setPlaying({...isPlaying, tick_no:tickRef.current, playing: false})
+                        } else {
+                            tickRef.current = isPlaying.tick_no
+                            console.log(`UNPAUSE TICK:${tickRef.current}`)
+                            setPlaying({...isPlaying, tick_no:tickRef.current, playing: true})
+                            tickRef.current = isPlaying.tick_no
+                        }
                     }}>{ isPlaying.playing == false ? "Play": "Pause"}</button>
                 <button onClick={() => {
                     tickRef.current += 500
@@ -615,14 +846,13 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                     }}>forward</button>
             </div>
             <div className="progress">
-                Progtess Bar
+                <progress style={{width: "100%"}} value={round_begin_ticks.current[1]-tickRef.current} max={round_begin_ticks.current[1]-round_begin_ticks.current[0]}/>
             </div>
             <div className="rounds">
                 <ul style={{justifyContent:"center", marginTop:"10px"}}>
                 {stats && 
                         Array.from({length:stats.rounds}, (_, i) => i+1).map((n, j) => {
                             return <li key={j} onClick={() => {
-                                setRound(n);
                                 playerRef.current?.forEach((group, key) => {
                                     const groupobject = group.getAttr("name")
                                     if (groupobject == "player"){
@@ -634,7 +864,27 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                         getPlayerRef().delete(key)
                                     }
                                 })
+                                hudRef.current!.forEach((g, id) => { 
+                                    let node = g.findOne((n:Konva.Node) => {
+                                        return n.getAttr("name") == "hpbar"
+                                    })
+                                    const hp = node as Konva.Rect
+                                    hp.width((stageDim.width-size.width)/2)
+                                    node = g.findOne((n:Konva.Node) => {
+                                        return n.getAttr("name") == "hp"
+                                    })
+                                    let text = node as Konva.Text
+                                    text.text(`${100}`)
+                                    node = g.findOne((n:Konva.Node) => {
+                                        return n.getAttr("name") == "bomb"
+                                    })
+                                    if (node != null){
+                                        node.destroy()
+                                    }
+
+                                });
                                 setPlaying({tick_no:round_begin_ticks.current[1], playing:false, round_no: n})
+                                setRound(n);
                             }}className={(n) == isPlaying.round_no ? "activeRound" : ""}>
                                 {n}
                             </li>

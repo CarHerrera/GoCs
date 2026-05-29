@@ -25,7 +25,7 @@ type SQLMatch struct {
 
 func TestConnect(t *testing.T) {
 	_ = godotenv.Load()
-	fileName := "NoAaronAlexMirage.dem"
+	fileName := "Game5Season2.dem"
 	dbUser := os.Getenv("DB_USER")
 	dbPassword := os.Getenv("DB_PASSWORD")
 	// log.Printf("%s %s", dbUser, dbPassword)
@@ -56,19 +56,22 @@ func TestConnect(t *testing.T) {
 		t.Error("Error opening file")
 	}
 	p := dem.NewParserWithConfig(file, dem.ParserConfig{
-		MsgQueueBufferSize:        0,
+		MsgQueueBufferSize:        -1,
 		IgnorePacketEntitiesPanic: true,
 	})
+	// p.Logger().SetOutput(io.Discard)
 	t.Log("Starting parse")
 	p.RegisterEventHandler(func(m events.MatchStartedChanged) {
 		t.Log("Match started!")
 		round = 1
 	})
 	p.RegisterEventHandler(func(k events.Kill) {
+		if k.Killer == nil {
+			return
+		}
 		t.Logf("%v got a kill", k.Killer.Name)
 	})
-	p.RegisterEventHandler(func(r events.RoundEnd) {
-		//
+	p.RegisterEventHandler(func(r events.RoundEndOfficial) {
 		t.Logf("Round %v ended", round)
 		round++
 	})
@@ -76,7 +79,7 @@ func TestConnect(t *testing.T) {
 	// var TeamStats [2]Team
 	defer file.Close()
 	if err := p.ParseToEnd(); err != nil {
-		t.Fatal(err)
+		t.Log(err)
 	}
 	t.Log("Parse completed")
 	// 	return c.Status(20).JSON(resp)

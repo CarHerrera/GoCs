@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"slices"
 	"sync"
@@ -62,9 +63,29 @@ type Team struct {
 	inited         bool
 }
 type PlayerState struct {
-	Position r3.Vector `json:"vector"`
-	Weapon   string    `json:"weapon"`
+	Position r3.Vector    `json:"vector"`
+	Weapon   string       `json:"weapon"`
+	HP       int          `json:"hp"`
+	Kills    int          `json:"kills"`
+	Assists  int          `json:"assists"`
+	Deaths   int          `json:"deaths"`
+	Armor    int          `json:"armor"`
+	Money    int          `json:"dinero"`
+	Action   PlayerAction `json:"action"`
+	HasBomb  bool         `json:"hasBomb"`
 }
+type PlayerAction int
+
+const (
+	isMoving PlayerAction = iota
+	beginPlanting
+	donePlanting
+	abortedPlant
+	beginDefusing
+	doneDefusing
+	abortedDefuse
+)
+
 type GrenadeState struct {
 	Position     r3.Vector `json:"vector"`
 	Grenade      string    `json:"grenade"`
@@ -77,10 +98,13 @@ type FireState struct {
 	Status   string     `json:"status"`
 }
 type posEntry struct {
-	matchID, roundNo, tick, side int
-	steamID                      uint64
-	x, y, z                      float64
-	weapon                       string
+	matchID, roundNo, tick, side             int
+	steamID                                  uint64
+	hp, kills, assists, deaths, armor, money int
+	hasBomb                                  bool
+	x, y, z                                  float64
+	weapon                                   string
+	action                                   PlayerAction
 }
 type GrenadeEntry struct {
 	matchID, roundNo, tick int
@@ -395,14 +419,24 @@ func Parse2D(filename string) MatchEvents {
 		}
 	}()
 	var playback MatchEvents
-	RoundPositions := make(map[int]RoundEvents)
-	FireParticles := make(map[int][]r2.Point)
+	// playback.Teams = make(map[string]map[int64]string)
+	var RoundPositions map[int]RoundEvents
+	var FireParticles map[int][]r2.Point
 	live := false
 	rounds := 0
+
+	// Helper to ensure round entry exists before accessing
+
+	log.Printf("STARTING PARSE")
 	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
 		live = true
 		rounds = 1
-
+		RoundPositions = make(map[int]RoundEvents)
+		FireParticles = make(map[int][]r2.Point)
+		playerBuffer = playerBuffer[:0]
+		grenadeBuffer = grenadeBuffer[:0]
+		fireBuffer = fireBuffer[:0]
+		// playback = MatchEvents{Teams: make(map[string]map[int64]string)}
 		playback.Teams = make(map[string]map[int64]string)
 		gs := p.GameState()
 		_, err := DB.Exec("INSERT IGNORE INTO ROUNDS (MATCHID, ROUND_NO) VALUES (?,?)", matchid, rounds)
@@ -417,6 +451,12 @@ func Parse2D(filename string) MatchEvents {
 				panic(err)
 			}
 		}
+		RoundPositions[rounds] = RoundEvents{
+			PlayerPositions: make(map[int]map[int64]PlayerState),
+			PlayerNames:     make(map[int64]PlayerInfo),
+			GrenadeEvents:   make(map[int]map[int]GrenadeState),
+			FirePositions:   make(map[int]map[int]FireState),
+		}
 	})
 	// p.RegisterEventHandler(func(events.M))
 	p.RegisterEventHandler(func(events.FrameDone) {
@@ -430,8 +470,17 @@ func Parse2D(filename string) MatchEvents {
 			for _, player := range gs.Participants().Playing() {
 				pos := player.Position()
 				if player.IsAlive() {
+					inv := player.Weapons()
+					hasBomb := false
+					for _, wep := range inv {
+						if wep.Type == common.EqBomb {
+							hasBomb = true
+						}
+					}
 					playerBuffer = append(playerBuffer, posEntry{
-						matchid, rounds, tick, int(player.GetTeam()), player.SteamID64, pos.X, pos.Y, pos.Z, player.ActiveWeapon().String(),
+						matchid, rounds, tick, int(player.GetTeam()), player.SteamID64,
+						player.Health(), player.Kills(), player.Assists(), player.Deaths(), player.Armor(), player.Money(), hasBomb,
+						pos.X, pos.Y, pos.Z, player.ActiveWeapon().String(), isMoving,
 					})
 					// Check to see if player is added
 					position := r3.Vector{X: pos.X, Y: pos.Y, Z: pos.Z}
@@ -441,13 +490,12 @@ func Parse2D(filename string) MatchEvents {
 					// log.Printf("%v", player.Weapons())
 					if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
 						RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]PlayerState)
-						RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
-							Position: position, Weapon: player.ActiveWeapon().String(),
-						}
-					} else {
-						RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
-							Position: position, Weapon: player.ActiveWeapon().String(),
-						}
+
+					}
+					RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
+						Position: position, Weapon: player.ActiveWeapon().String(), HP: player.Health(),
+						Kills: player.Kills(), Assists: player.Assists(), Deaths: player.Deaths(),
+						Armor: player.Armor(), Money: player.Money(), Action: isMoving, HasBomb: hasBomb,
 					}
 				}
 
@@ -526,6 +574,197 @@ func Parse2D(filename string) MatchEvents {
 			copy(fireBatchSend, fireBuffer)
 			fireBatch <- fireBatchSend
 			fireBuffer = fireBuffer[:0]
+		}
+	})
+
+	p.RegisterEventHandler(func(be events.BombPlantBegin) {
+		if !live {
+			return
+		}
+		// log.Printf("round %v planted begin", rounds)
+		player := be.Player
+		pos := player.Position()
+		tick := p.GameState().IngameTick()
+		// log.Printf("About to create entry at %v", tick)
+		playerBuffer = append(playerBuffer, posEntry{
+			matchid, rounds, tick, int(player.GetTeam()), player.SteamID64,
+			player.Health(), player.Kills(), player.Assists(), player.Deaths(), player.Armor(), player.Money(), true,
+			pos.X, pos.Y, pos.Z, player.ActiveWeapon().String(), beginPlanting,
+		})
+		// log.Print("Entry Created")
+		// log.Printf("%v", player.Weapons())
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			// log.Print("Empty Thing")
+			RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]PlayerState)
+		}
+		// log.Printf("%v", RoundPositions[rounds].PlayerPositions[tick])
+		test := PlayerState{
+			Position: pos, Weapon: player.ActiveWeapon().String(), HP: player.Health(), HasBomb: true,
+			Kills: player.Kills(), Assists: player.Assists(), Deaths: player.Deaths(),
+			Armor: player.Armor(), Money: player.Money(), Action: beginPlanting,
+		}
+		// log.Printf("%v", RoundPositions[rounds])
+		RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = test
+
+	})
+	p.RegisterEventHandler(func(pe events.BombPlantAborted) {
+		if !live {
+			return
+		}
+		player := pe.Player
+		pos := player.Position()
+		tick := p.GameState().IngameTick()
+		playerBuffer = append(playerBuffer, posEntry{
+			matchid, rounds, tick, int(player.GetTeam()), player.SteamID64,
+			player.Health(), player.Kills(), player.Assists(), player.Deaths(), player.Armor(), player.Money(), true,
+			pos.X, pos.Y, pos.Z, "", abortedPlant,
+		})
+		// log.Printf("%v", player.Weapons())
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]PlayerState)
+		}
+		RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
+			Position: pos, Weapon: "", HP: player.Health(), HasBomb: true,
+			Kills: player.Kills(), Assists: player.Assists(), Deaths: player.Deaths(),
+			Armor: player.Armor(), Money: player.Money(), Action: abortedPlant,
+		}
+	})
+	p.RegisterEventHandler(func(be events.BombPlanted) {
+		if !live {
+			return
+		}
+		player := be.Player
+		pos := player.Position()
+		tick := p.GameState().IngameTick()
+		playerBuffer = append(playerBuffer, posEntry{
+			matchid, rounds, tick, int(player.GetTeam()), player.SteamID64,
+			player.Health(), player.Kills(), player.Assists(), player.Deaths(), player.Armor(), player.Money(), false,
+			pos.X, pos.Y, pos.Z, "", donePlanting,
+		})
+		// ADD BOMB TO GRENADE ENTRY.
+		// BOMB IS ON FLOOR
+		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+			matchid, rounds, tick, -1, player.SteamID64, pos.X, pos.Y, pos.Z, "BOMB", "PLANTED",
+		})
+		if len(RoundPositions[rounds].GrenadeEvents[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+		}
+		RoundPositions[rounds].GrenadeEvents[tick][-1] = GrenadeState{
+			Position: pos, Grenade: "BOMB", ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+		// log.Print("Entry created")
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]PlayerState)
+		}
+		RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
+			Position: pos, Weapon: "", HP: player.Health(), HasBomb: false,
+			Kills: player.Kills(), Assists: player.Assists(), Deaths: player.Deaths(),
+			Armor: player.Armor(), Money: player.Money(), Action: donePlanting,
+		}
+	})
+	p.RegisterEventHandler(func(be events.BombDefuseStart) {
+		if !live {
+			return
+		}
+		player := be.Player
+		pos := player.Position()
+		tick := p.GameState().IngameTick()
+		playerBuffer = append(playerBuffer, posEntry{
+			matchid, rounds, tick, int(player.GetTeam()), player.SteamID64,
+			player.Health(), player.Kills(), player.Assists(), player.Deaths(), player.Armor(), player.Money(), false,
+			pos.X, pos.Y, pos.Z, player.ActiveWeapon().String(), beginDefusing,
+		})
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]PlayerState)
+		}
+		test := PlayerState{
+			Position: pos, Weapon: player.ActiveWeapon().String(), HP: player.Health(), HasBomb: false,
+			Kills: player.Kills(), Assists: player.Assists(), Deaths: player.Deaths(),
+			Armor: player.Armor(), Money: player.Money(), Action: beginDefusing,
+		}
+		RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = test
+	})
+	p.RegisterEventHandler(func(pe events.BombDefuseAborted) {
+		if !live {
+			return
+		}
+		player := pe.Player
+		pos := player.Position()
+		tick := p.GameState().IngameTick()
+		playerBuffer = append(playerBuffer, posEntry{
+			matchid, rounds, tick, int(player.GetTeam()), player.SteamID64,
+			player.Health(), player.Kills(), player.Assists(), player.Deaths(), player.Armor(), player.Money(), false,
+			pos.X, pos.Y, pos.Z, "", abortedDefuse,
+		})
+		// log.Printf("%v", player.Weapons())
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]PlayerState)
+		}
+		RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
+			Position: pos, Weapon: "", HP: player.Health(), HasBomb: false,
+			Kills: player.Kills(), Assists: player.Assists(), Deaths: player.Deaths(),
+			Armor: player.Armor(), Money: player.Money(), Action: abortedDefuse,
+		}
+	})
+	p.RegisterEventHandler(func(be events.BombDefused) {
+		if !live {
+			return
+		}
+		player := be.Player
+		pos := player.Position()
+		tick := p.GameState().IngameTick()
+		playerBuffer = append(playerBuffer, posEntry{
+			matchid, rounds, tick, int(player.GetTeam()), player.SteamID64,
+			player.Health(), player.Kills(), player.Assists(), player.Deaths(), player.Armor(), player.Money(), false,
+			pos.X, pos.Y, pos.Z, "", doneDefusing,
+		})
+		// ADD BOMB TO GRENADE ENTRY.
+		// BOMB IS ON FLOOR
+		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+			matchid, rounds, tick, -1, player.SteamID64, pos.X, pos.Y, pos.Z, "BOMB", "DEFUSED",
+		})
+		if len(RoundPositions[rounds].GrenadeEvents[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+		}
+		RoundPositions[rounds].GrenadeEvents[tick][-1] = GrenadeState{
+			Position: pos, Grenade: "BOMB", ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+		// log.Print("Entry created")
+		if len(RoundPositions[rounds].PlayerPositions[tick]) == 0 {
+			RoundPositions[rounds].PlayerPositions[tick] = make(map[int64]PlayerState)
+		}
+		RoundPositions[rounds].PlayerPositions[tick][int64(player.SteamID64)] = PlayerState{
+			Position: pos, Weapon: "", HP: player.Health(), HasBomb: false,
+			Kills: player.Kills(), Assists: player.Assists(), Deaths: player.Deaths(),
+			Armor: player.Armor(), Money: player.Money(), Action: doneDefusing,
+		}
+	})
+	p.RegisterEventHandler(func(be events.BombDropped) {
+		player := be.Player
+		pos := player.Position()
+		tick := p.GameState().IngameTick()
+		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+			matchid, rounds, tick, -1, player.SteamID64, pos.X, pos.Y, pos.Z, "BOMB", "DROPPED",
+		})
+		if len(RoundPositions[rounds].GrenadeEvents[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+		}
+		RoundPositions[rounds].GrenadeEvents[tick][-1] = GrenadeState{
+			Position: pos, Grenade: "BOMB", ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
+		}
+	})
+	p.RegisterEventHandler(func(bp events.BombPickup) {
+		player := bp.Player
+		pos := player.Position()
+		tick := p.GameState().IngameTick()
+		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
+			matchid, rounds, tick, -1, player.SteamID64, pos.X, pos.Y, pos.Z, "BOMB", "GRABBED",
+		})
+		if len(RoundPositions[rounds].GrenadeEvents[tick]) == 0 {
+			RoundPositions[rounds].GrenadeEvents[tick] = make(map[int]GrenadeState)
+		}
+		RoundPositions[rounds].GrenadeEvents[tick][-1] = GrenadeState{
+			Position: pos, Grenade: "BOMB", ThrownByName: player.Name, ThrownByid: int64(player.SteamID64),
 		}
 	})
 	p.RegisterEventHandler(func(g events.GrenadeProjectileThrow) {
@@ -776,7 +1015,8 @@ func flushToDB(db *sql.DB, entries []posEntry) {
 		}
 	}
 
-	stmt, err := tx.Prepare("INSERT INTO ROUND_EVENTS (MATCHID,ROUND_NO,PLAYERID,WEAPON,XPOS,YPOS,ZPOS,TICK) VALUES (?,?,?,?,?,?,?,?)" +
+	stmt, err := tx.Prepare("INSERT INTO PLAYER_EVENTS (MATCHID,ROUND_NO,PLAYERID,HP,WEAPON,HAS_BOMB,P_ACTION,KILLS,ASSIST,DEATHS,ARMOR,DINERO,XPOS,YPOS,ZPOS,TICK) VALUES" +
+		"(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)" +
 		"ON DUPLICATE KEY UPDATE WEAPON=(WEAPON), XPOS=VALUES(XPOS), YPOS=VALUES(YPOS), ZPOS=VALUES(ZPOS)")
 	if err != nil {
 		panic(err)
@@ -785,7 +1025,7 @@ func flushToDB(db *sql.DB, entries []posEntry) {
 
 	for _, e := range entries {
 		// fmt.Printf("MID:%v, ROUND_NO:%v, STEAM:%v, WEAPON:%v, X:%v, Y:%v, Z:%v, TICK:%v\n", e.matchID, e.roundNo, e.steamID, e.weapon, e.x, e.y, e.z, e.tick)
-		if _, err := stmt.Exec(e.matchID, e.roundNo, e.steamID, e.weapon, e.x, e.y, e.z, e.tick); err != nil {
+		if _, err := stmt.Exec(e.matchID, e.roundNo, e.steamID, e.hp, e.weapon, e.hasBomb, e.action, e.kills, e.assists, e.deaths, e.armor, e.money, e.x, e.y, e.z, e.tick); err != nil {
 			tx.Rollback()
 			panic(err)
 		}

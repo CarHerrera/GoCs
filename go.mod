@@ -7,7 +7,7 @@ require (
 	github.com/gofiber/fiber/v3 v3.2.0
 	github.com/golang/geo v0.0.0-20260302211937-87f5a40ea07a
 	github.com/joho/godotenv v1.5.1
-	github.com/markus-wa/demoinfocs-golang/v5 v5.1.2
+	github.com/markus-wa/demoinfocs-golang/v5 v5.2.0
 )
 
 require (

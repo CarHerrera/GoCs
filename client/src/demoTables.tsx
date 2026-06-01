@@ -6,6 +6,8 @@ interface fileInfo{
     date: string,
     filesize: number,
     map: string
+    parsed: boolean
+    stats: boolean
 }
 function DemoTable() {
     const [files, setFiles] = useState<fileInfo[]>([]);
@@ -20,7 +22,6 @@ function DemoTable() {
             if(!response.ok){
                  throw new Error(`HTTP error! status: ${response.status}`);
             }
-            console.log(response)
             return response.json();
         }) .then(data => {
             console.log(data);
@@ -42,6 +43,8 @@ function DemoTable() {
         let file = x.filename
         let map = x.map 
         let date = x.date
+        let parsed = x.parsed
+        let stats = x.stats
         if (file[0] == "\""){
             file = x.filename.substring(1, file.length-1)
         }
@@ -51,8 +54,10 @@ function DemoTable() {
         if (date[0] == "\""){
             date = x.date.substring(1, date.length-1)
         }
-        return <tr key={i}><td>{file}</td><td>{date}</td><td>{map}</td><td>
-            <Link to={`/advancedStats?file=${file}&map=${map}`}>Stats</Link></td></tr>
+        console.log(x)
+        console.log(stats)
+        return <tr key={i}><td>{file}</td><td>{date}</td><td>{map}</td><td>{stats ? "true" : "false" }</td><td>{parsed ? "true" : "false"}</td>
+        <td><Link to={`/advancedStats?file=${file}&map=${map}`}>Stats</Link></td></tr>
     })
     return <>
         <div >
@@ -62,6 +67,8 @@ function DemoTable() {
                         <th>File Name</th>
                         <th>Date Uploaded</th>
                         <th>Map</th>
+                        <th>HasStats?</th>
+                        <th>Parsed?</th>
                         <th>Advanved Stats</th>
                     </tr>
                 </thead>

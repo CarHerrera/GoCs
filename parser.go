@@ -23,6 +23,8 @@ type BaseDemo struct {
 	FileSize  string  `json:"filesize,string"`
 	Map       string  `json:"map,string"`
 	TeamStats [2]Team `json:"team_stats"`
+	Parsed    bool    `json:"parsed"`
+	BaseStats bool    `json:"stats"`
 	ID        int
 }
 
@@ -373,6 +375,8 @@ func parse_demo_stats(fileName string, MATCHID int) (BaseDemo, error) {
 		FileName:  info.Name(),
 		ModDate:   info.ModTime().Local().String(),
 		FileSize:  fmt.Sprintf("%.2f", float64(info.Size())/1024.0/1024.0*1.00),
+		BaseStats: true,
+		Parsed:    false,
 		Map:       GameMap,
 		TeamStats: TeamStats,
 	}
@@ -423,12 +427,17 @@ func Parse2D(filename string) MatchEvents {
 	var RoundPositions map[int]RoundEvents
 	var FireParticles map[int][]r2.Point
 	live := false
+
 	rounds := 0
 
 	// Helper to ensure round entry exists before accessing
 
 	log.Printf("STARTING PARSE")
+
 	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
+		if rounds > 1 {
+			return
+		}
 		live = true
 		rounds = 1
 		RoundPositions = make(map[int]RoundEvents)
@@ -503,21 +512,34 @@ func Parse2D(filename string) MatchEvents {
 			if len(flames) != 0 {
 				for key, inf := range flames {
 					lastState := FireParticles[key]
-					if slices.Equal(lastState, inf.Fires().ConvexHull2D()) {
+					if slices.Equal(lastState, inf.Fires().Active().ConvexHull2D()) {
 						return
 					} else {
 						if len(RoundPositions[rounds].FirePositions[tick]) == 0 {
 							RoundPositions[rounds].FirePositions[tick] = make(map[int]FireState)
 						}
-						RoundPositions[rounds].FirePositions[tick][key] = FireState{
-							Vertices: inf.Fires().ConvexHull2D(), Status: "SPREADING",
+						if len(inf.Fires().Active().ConvexHull2D()) == 0 {
+							RoundPositions[rounds].FirePositions[tick][key] = FireState{
+								Vertices: inf.Fires().ConvexHull2D(), Status: "ENDING",
+							}
+							for i, fire := range inf.Fires().ConvexHull2D() {
+								fireBuffer = append(fireBuffer, FireEntry{
+									matchid, rounds, tick, key, i, fire.X, fire.Y, "ENDING",
+								})
+							}
+							FireParticles[key] = inf.Fires().Active().ConvexHull2D()
+						} else {
+							RoundPositions[rounds].FirePositions[tick][key] = FireState{
+								Vertices: inf.Fires().Active().ConvexHull2D(), Status: "SPREADING",
+							}
+							for i, fire := range inf.Fires().Active().ConvexHull2D() {
+								fireBuffer = append(fireBuffer, FireEntry{
+									matchid, rounds, tick, key, i, fire.X, fire.Y, "SPREADING",
+								})
+							}
+							FireParticles[key] = inf.Fires().Active().ConvexHull2D()
 						}
-						for i, fire := range inf.Fires().ConvexHull2D() {
-							fireBuffer = append(fireBuffer, FireEntry{
-								matchid, rounds, tick, key, i, fire.X, fire.Y, "SPREADING",
-							})
-						}
-						FireParticles[key] = inf.Fires().ConvexHull2D()
+
 					}
 				}
 
@@ -641,8 +663,7 @@ func Parse2D(filename string) MatchEvents {
 			player.Health(), player.Kills(), player.Assists(), player.Deaths(), player.Armor(), player.Money(), false,
 			pos.X, pos.Y, pos.Z, "", donePlanting,
 		})
-		// ADD BOMB TO GRENADE ENTRY.
-		// BOMB IS ON FLOOR
+		// ADD BOMB TO GRENADE ENTRY. IS ON FLOOR
 		grenadeBuffer = append(grenadeBuffer, GrenadeEntry{
 			matchid, rounds, tick, -1, player.SteamID64, pos.X, pos.Y, pos.Z, "BOMB", "PLANTED",
 		})
@@ -924,9 +945,9 @@ func Parse2D(filename string) MatchEvents {
 			RoundPositions[rounds].FirePositions[tick] = make(map[int]FireState)
 		}
 		RoundPositions[rounds].FirePositions[tick][id] = FireState{
-			Vertices: g.Inferno.Fires().ConvexHull2D(), Status: "STARTING",
+			Vertices: g.Inferno.Fires().Active().ConvexHull2D(), Status: "STARTING",
 		}
-		for i, fire := range g.Inferno.Fires().ConvexHull2D() {
+		for i, fire := range g.Inferno.Fires().Active().ConvexHull2D() {
 			fireBuffer = append(fireBuffer, FireEntry{
 				matchid, rounds, tick, id, i, fire.X, fire.Y, "STARTING",
 			})

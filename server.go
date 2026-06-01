@@ -88,7 +88,7 @@ func main() {
 				continue
 			}
 			var row BaseDemo
-			if err := DB.QueryRow("SELECT DEMO_NAME, SAVED_DATE, MAP FROM MATCHES WHERE DEMO_NAME = ?", e.Name()).Scan(&row.FileName, &row.ModDate, &row.Map); err != nil {
+			if err := DB.QueryRow("SELECT DEMO_NAME, SAVED_DATE, MAP, PARSED_STATS, PARSED_2D FROM MATCHES WHERE DEMO_NAME = ?", e.Name()).Scan(&row.FileName, &row.ModDate, &row.Map, &row.BaseStats, &row.Parsed); err != nil {
 				if err == sql.ErrNoRows {
 					path := getDemoPath() + e.Name()
 					demofile, _ := os.Open(path)
@@ -109,9 +109,11 @@ func main() {
 						panic(err)
 					}
 					infoSend := BaseDemo{
-						FileName: e.Name(),
-						ModDate:  timefmted,
-						Map:      GameMap,
+						FileName:  e.Name(),
+						ModDate:   timefmted,
+						Map:       GameMap,
+						Parsed:    false,
+						BaseStats: false,
 					}
 					file = append(file, infoSend)
 				}

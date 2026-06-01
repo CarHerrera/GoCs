@@ -74,6 +74,20 @@ interface PlayBackRef{
     fire_vertices: Map<number, Map<string, FireState>>;
 }
 
+interface EntityInfo{
+    kind: string
+    status: string
+    id: string
+    lastTickUpdate: number
+}
+interface EntityLife{
+    grenadeString: string
+    lastSavedState: string
+    flyingStart: number
+    bloomedStart?: number
+    bloomExpiry?: number
+    flyingExpire: number
+}
 interface PlayerBox {
     width: number
     height: number
@@ -114,7 +128,6 @@ function playerBoxInfo({playerBox, hud}:{playerBox:PlayerBox, hud: Map<string, K
                 if (node != null){
                     hud.set(playerid, node)
                 }
-                
             }}>
                 <Rect width={width} height={height} fill={color} stroke={"black"} strokeWidth={5}/>
                 <Rect width={width} name="hpbar" height={height *.4} fill={"red"} stroke={"black"} strokeWidth={5}/>
@@ -186,10 +199,12 @@ function DemoPlayback({file, map}:{file:String, map:String}){
         const [isPlaying, setPlaying] = useState<PlaybackState>({playing: false, round_no:1, tick_no: 0});
         const playbackContainer = useRef<HTMLDivElement>(null);
         const round_begin_ticks = useRef<number[]>([]);
-        // const progressRef = useRef();
+        const grenadeCache = useRef<Map<string, EntityInfo>>(new Map());
+        const grenadeLife = useRef<Map<string, EntityLife>>(new Map())
         const tickRef = useRef(isPlaying.tick_no);
         const playerRef = useRef<Map<string, Konva.Group>>(null);
         const hudRef = useRef<Map<string, Konva.Group>>(new Map());
+        const progressRef = useRef<HTMLInputElement>(null);
         // ROUND NO -> TICK NO -> PLAYBACK REF
         const playbackRef = useRef<PlayBackRef>(null);
         const layerRef = useRef<Konva.Layer>(null)
@@ -231,8 +246,9 @@ function DemoPlayback({file, map}:{file:String, map:String}){
             return () => { ignore = true}
         }, [file, round])
         // Handle Responsive Resizing
-         useEffect(() => {
-            const updateSize = () => {
+        useEffect(() => {
+
+             const updateSize = () => {
                     if (playbackContainer.current) {
                         const parentElement = playbackContainer.current.parentElement;
                     if (!parentElement) return;
@@ -245,25 +261,44 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                     setSize({ width: side, height: side });
                     setStageDim({width:playbackContainer.current?.getBoundingClientRect().width!, height:playbackContainer.current?.getBoundingClientRect().height!})
                 }
-        };
+            };
 
-        const observer = new ResizeObserver(updateSize);
-        if (playbackContainer.current) {
-            observer.observe(playbackContainer.current);
-        }
+            const observer = new ResizeObserver(updateSize);
+            if (playbackContainer.current) {
+                observer.observe(playbackContainer.current);
+            }
 
-        updateSize(); 
-        const anim = new Konva.Animation(() => {
+            updateSize(); 
+
+
+            return () => observer.disconnect();
+        }, []);
+        useEffect(() => {
+        const TARGET_TICK_RATE = 64; 
+        const MS_PER_TICK = 1000 / TARGET_TICK_RATE;
+        let accumulatedTime = 0;
+        const anim = new Konva.Animation((frame) => {
+            if (!frame) return
             if (!isPlaying.playing) {
                 tickRef.current = isPlaying.tick_no
                 return
             }
-
+            accumulatedTime += frame.timeDiff;
+            while (accumulatedTime >= MS_PER_TICK) {
+            if (tickRef.current === 0) {
+                tickRef.current = isPlaying.tick_no;
+            }
+            tickRef.current += 1;
+            accumulatedTime -= MS_PER_TICK;
+            }
+            if (progressRef.current) {
+                progressRef.current.value = tickRef.current.toString();
+                
+            }
             if (playerRef.current != null){
                 if (tickRef.current === 0) {
                     tickRef.current = isPlaying.tick_no;
                 }
-               tickRef.current += 1;
                 playerRef.current?.forEach((group_object, itemid) => {
                     const x = group_object!.getAttr("name")
                         if (x == "player"){    
@@ -272,186 +307,195 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                 group_object.getChildren().forEach((g) => {
                                 // Positions become null means that the player died in the server because we stopped recording them
                                 // TODO Maybe change it to an X if I can?
-                                if (g.className == "Circle") {
-                                    if(positions == null){
+                                if(positions == null){
                                         g.x(-1000);
                                         g.y(-1000)
-                                    } else {
+                                } else {
+                                    if (g.className == "Circle") {
                                         g.x(positions!.vector.X);
                                         g.y(positions!.vector.Y)
-                                    }
-                                    
-                                } else {
-                                    if(positions == null){
-                                        g.x(-1000);
-                                        g.y(-1000)
                                     } else {
                                         g.x(positions!.vector.X+5);
                                         g.y(positions!.vector.Y-3)
                                     }
-                                    
                                 }})
                             }
                         } else {
-                            // found a group that isn't a grenade'
-                            if (group_object.hasName("FLYING")){
-                                if(playbackRef.current!.grenade_pos.has(tickRef.current)){
+                            let lastInfo = grenadeCache.current.get(itemid)
+                            if (lastInfo != null){
+                                if (lastInfo.kind == "GRENADE"){
+                                    if (!playbackRef.current!.grenade_pos.has(tickRef.current)) return
                                     const gren_pos = playbackRef.current!.grenade_pos.get(tickRef.current)!.get(itemid)
-                                    if (gren_pos != null && gren_pos.status != "FLYING"){
-                                        if (gren_pos.status == "BLOOMED") {
-                                            group_object.removeName("FLYING")
-                                            group_object.addName("BLOOMED")
-                                            group_object.getChildren().forEach((g) => {
+                                    if (gren_pos != null){
+                                        if (lastInfo.status == gren_pos.status){
+                                            switch (gren_pos.status){
+                                            case "FLYING":
+                                                group_object.getChildren().forEach((g) => {
                                                 if (g.className == "Circle") {
-                                                    const circle = g as Konva.Circle
-                                                    circle.radius(size.height * .035);
+                                                    g.x(gren_pos!.vector.X);
+                                                    g.y(gren_pos!.vector.Y)  
+                                                } else {
+                                                    g.x(gren_pos!.vector.X+5);
+                                                    g.y(gren_pos!.vector.Y-3)
                                                 }
-                                            })
-                                            // console.log(`CHANGED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
-                                        }
 
-                                        if (gren_pos.status == "EXPIRED" || gren_pos.status == "LANDED"){
-                                            group_object.destroyChildren()              
-                                            playerRef.current?.delete(itemid)
-                                            getPlayerRef().delete(itemid)
-                                            // console.log(`DELETED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
-                                        }
-                                        
-                                        
-                                        
-                                    }
-                                    group_object.getChildren().forEach((g) => {
-                                        if (g.className == "Circle") {
-                                            if(gren_pos != null){
-                                                g.x(gren_pos!.vector.X);
-                                                g.y(gren_pos!.vector.Y)  
-                                            } 
-                                        } else {
-                                            if(gren_pos != null){
-                                                g.x(gren_pos!.vector.X+5);
-                                                g.y(gren_pos!.vector.Y-3)
+                                            })
+                                            break;
+                                            case "BLOOMED":
+                                                break;
                                             }
-                                            
+                                        } else {
+                                            switch(gren_pos.status){
+                                               // FLYING -> BLOOMED
+                                                case "BLOOMED":
+                                                    group_object.getChildren().forEach((g) => {
+                                                        if (g.className == "Circle") {
+                                                            const circle = g as Konva.Circle
+                                                            circle.radius(size.height * .035);
+                                                        }
+                                                    })
+                                                    lastInfo.status = "BLOOMED"
+                                                    lastInfo.lastTickUpdate = tickRef.current
+                                                    grenadeCache.current.set(itemid, lastInfo)
+                                                break;
+                                                // BLOOMED -> EXPIRED || FLYING -> LANDED || EXPIRED
+                                                case "EXPIRED":
+                                                case "LANDED":
+                                                    group_object.destroyChildren()     
+                                                    grenadeCache.current.delete(itemid)         
+                                                    playerRef.current?.delete(itemid)
+                                                    getPlayerRef().delete(itemid)
+                                                break;
+                                            }
                                         }
-                                    })
-                                }
-                            } else if (group_object.hasName("BLOOMED")){
-                                if(playbackRef.current!.grenade_pos.has(tickRef.current)){
+                                    }
+                                } else if (lastInfo.kind == "BOMB"){
+                                    if (!playbackRef.current!.grenade_pos.has(tickRef.current)) return
                                     const gren_pos = playbackRef.current!.grenade_pos.get(tickRef.current)!.get(itemid)
-                                    if (gren_pos != null && gren_pos.status == "EXPIRED"){
-                                        group_object.destroyChildren()
-                                        playerRef.current!.delete(itemid)
-                                        getPlayerRef().delete(itemid)
-                                        // console.log(`DELETED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
+                                    if (gren_pos != null){
+                                        if (lastInfo.status != gren_pos.status){
+                                            switch (gren_pos.status){
+                                                // DROPPED -> GRABBED
+                                                case "GRABBED":
+                                                    group_object.destroyChildren()
+                                                    playerRef.current!.delete(itemid)
+                                                    grenadeCache.current.delete(itemid)
+                                                    getPlayerRef().delete(itemid)
+                                                break;
+                                                // PLANTED -> DEFUSED
+                                                case "DEFUSED":
+                                                    group_object.getChildren().forEach((g) => {
+                                                        if (g.className == "Rect"){
+                                                            const bomb = g as Konva.Rect
+                                                            bomb.fill("GREEN")
+                                                        }
+                                                    })
+                                                    lastInfo.lastTickUpdate = tickRef.current
+                                                    lastInfo.status = "DEFUSED"
+                                                    grenadeCache.current.set(itemid, lastInfo)
+                                                break;
+                                                default:
+                                                return
+                                            }
+                                        }
                                     }
                                 }
                             }
-                            // FIRE
-                            else if(group_object.hasName("STARTING")){
-                                if (playbackRef.current!.fire_vertices.has(tickRef.current)){
-                                    const fire_info = playbackRef.current!.fire_vertices.get(tickRef.current)!.get(itemid)
-                                    if (fire_info != null){
-                                        // Fire starts as circle since only one vertex.
-                                        //  If more than one vertex and is still a circle then delete. Draw new shape
-                                        if (fire_info.vertices.length > 1){
-                                            group_object.destroyChildren()
-                                            group_object.removeName("STARTING")
-                                            group_object.addName(fire_info.status)
+                            if (group_object.hasName("FIRE")){
+                                if (!playbackRef.current!.fire_vertices.has(tickRef.current)) return
+                                const fire_info = playbackRef.current!.fire_vertices.get(tickRef.current)!.get(itemid)
+                                if (fire_info != null){
+                                    if (group_object.hasName(fire_info.status)){
+                                        switch (fire_info.status){
+                                            case "STARTING":
+                                                // BEGINS AS CIRCLE. 
+                                                if (fire_info.vertices.length > 1){
+                                                    group_object.destroyChildren()
+                                                    group_object.removeName("STARTING")
+                                                    group_object.addName(fire_info.status)
 
-                                            const shape:Konva.Shape = new Konva.Shape({
-                                                fill:"orange",
-                                                sceneFunc: function (context,shape) {
-                                                    fire_info.vertices.forEach((vertex, i) => {
-                                                            if (i == 0){
-                                                                context.moveTo(vertex.X, vertex.Y)
-                                                                context.beginPath()
-                                                            } else {
-                                                                context.lineTo(vertex.X, vertex.Y)
-                                                            }
+                                                    const shape:Konva.Shape = new Konva.Shape({
+                                                        fill:"orange",
+                                                        sceneFunc: function (context,shape) {
+                                                            fire_info.vertices.forEach((vertex, i) => {
+                                                                    if (i == 0){
+                                                                        context.moveTo(vertex.X, vertex.Y)
+                                                                        context.beginPath()
+                                                                    } else {
+                                                                        context.lineTo(vertex.X, vertex.Y)
+                                                                    }
+                                                            })
+                                                            context.closePath()
+                                                            context.fillStrokeShape(shape)
+                                                        }
                                                     })
-                                                    context.closePath()
-                                                    context.fillStrokeShape(shape)
+                                                    group_object.add(shape)
+                                                    group_object.addName(`${fire_info.vertices.length}`)
+                                                } 
+                                            break;
+                                            case "SPREADING":
+                                                const curr_vertices = parseInt(group_object.name()[group_object.name().length-1])
+                                                if (curr_vertices != fire_info.vertices.length){
+                                                    group_object.destroyChildren()
+                                                    group_object.removeName(`${curr_vertices}`)
+                                                    const shape:Konva.Shape = new Konva.Shape({
+                                                        fill:"orange",
+                                                        sceneFunc: function (context,shape) {
+                                                            fire_info.vertices.forEach((vertex, i) => {
+                                                                    if (i == 0){
+                                                                        context.moveTo(vertex.X, vertex.Y)
+                                                                        context.beginPath()
+                                                                    } else {
+                                                                        context.lineTo(vertex.X, vertex.Y)
+                                                                    }
+                                                            })
+                                                            context.closePath()
+                                                            context.fillStrokeShape(shape)
+                                                        }
+                                                    })
+                                                    group_object.add(shape)
+                                                    group_object.addName(`${fire_info.vertices.length}`)
                                                 }
-                                            })
-                                            group_object.add(shape)
-                                            group_object.addName(`${fire_info.vertices.length}`)
+                                            break;
                                         }
-                                        
-                                    }
-                                }
-                            } else if (group_object.hasName("SPREADING")){
-                                if (playbackRef.current!.fire_vertices.has(tickRef.current)){
-                                    const fire_info = playbackRef.current!.fire_vertices.get(tickRef.current)!.get(itemid)
-                                    if (fire_info != null){
-                                        const curr_vertices = parseInt(group_object.name()[group_object.name().length-1])
-                                        if (fire_info.status == "ENDING"){
-                                            group_object.destroyChildren()
-                                            playerRef.current?.delete(itemid)
-                                            getPlayerRef().delete(itemid)
-                                        } else {
-                                            if (curr_vertices != fire_info.vertices.length){
+                                    } else {
+                                       switch(fire_info.status){
+                                        // SPREADING -> ENDING
+                                            case "ENDING":
                                                 group_object.destroyChildren()
-                                                group_object.removeName(`${curr_vertices}`)
-                                                const shape:Konva.Shape = new Konva.Shape({
-                                                    fill:"orange",
-                                                    sceneFunc: function (context,shape) {
-                                                        fire_info.vertices.forEach((vertex, i) => {
-                                                                if (i == 0){
-                                                                    context.moveTo(vertex.X, vertex.Y)
-                                                                    context.beginPath()
-                                                                } else {
-                                                                    context.lineTo(vertex.X, vertex.Y)
-                                                                }
-                                                        })
-                                                        context.closePath()
-                                                        context.fillStrokeShape(shape)
-                                                    }
-                                                })
-                                                group_object.add(shape)
-                                                group_object.addName(`${fire_info.vertices.length}`)
-                                            }
-                                        }
-                                    }
-                                }
-                            } else if (group_object.hasName("DROPPED")){
-                                if(playbackRef.current!.grenade_pos.has(tickRef.current)){
-                                    const gren_pos = playbackRef.current!.grenade_pos.get(tickRef.current)!.get(itemid)
-                                    if (gren_pos != null ){
-                                        switch (gren_pos.status) {
-                                            case "GRABBED":
-                                                group_object.destroyChildren()
-                                                playerRef.current!.delete(itemid)
+                                                playerRef.current?.delete(itemid)
                                                 getPlayerRef().delete(itemid)
                                             break;
-                                            default:
-                                            return
-                                        }
-                                        
-                                        // console.log(`DELETED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
-                                    }
-                                }
-                            } else if (group_object.hasName("PLANTED")){
-                                if(playbackRef.current!.grenade_pos.has(tickRef.current)){
-                                    const gren_pos = playbackRef.current!.grenade_pos.get(tickRef.current)!.get(itemid)
-                                    if (gren_pos != null ){
-                                        switch (gren_pos.status) {
-                                            case "DEFUSED":
-                                                group_object.getChildren().forEach((g) => {
-                                                    if (g.className == "Rect"){
-                                                        const bomb = g as Konva.Rect
-                                                        bomb.fill("GREEN")
-                                                    }
-                                                })
-                                                
+                                            // STARTING -> SPREADING
+                                            case "SPREADING":
+                                                if (fire_info.vertices.length > 1){
+                                                    group_object.destroyChildren()
+                                                    group_object.removeName("STARTING")
+                                                    group_object.addName(fire_info.status)
+
+                                                    const shape:Konva.Shape = new Konva.Shape({
+                                                        fill:"orange",
+                                                        sceneFunc: function (context,shape) {
+                                                            fire_info.vertices.forEach((vertex, i) => {
+                                                                    if (i == 0){
+                                                                        context.moveTo(vertex.X, vertex.Y)
+                                                                        context.beginPath()
+                                                                    } else {
+                                                                        context.lineTo(vertex.X, vertex.Y)
+                                                                    }
+                                                            })
+                                                            context.closePath()
+                                                            context.fillStrokeShape(shape)
+                                                        }
+                                                    })
+                                                    group_object.add(shape)
+                                                    group_object.addName(`${fire_info.vertices.length}`)
+                                                }
                                             break;
-                                            default:
-                                            return
-                                        }
-                                        
-                                        // console.log(`DELETED AT ${tickRef.current} ${gren_pos.grenade} ${gren_pos.status}`)
+                                       }
                                     }
                                 }
-                            }
+                            }  
                         }
                 })
                 // Check if a grenade needs to be created   
@@ -464,12 +508,19 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                         } else {
                             if (state.status == "EXPIRED" || state.status == "LANDED" || state.status == "ENDING" || state.status == "GRABBED") { return } 
                             const mainGroup = layerRef.current!.findOne("#mainPlayer") as Konva.Group
+                            if (grenadeCache.current == null){
+                                grenadeCache.current = new Map();
+                            }
                             if (state.grenade == "BOMB") {
                                 // console.log("BOMB NEEDS TO BE ADDED TO MAP")
-                                let bomb = new Konva.Group({name:`${state.grenade} ${state.status}`, id:id})
+                                let bomb = new Konva.Group({name:`BOMB ${state.status}`, id:id})
                                 let rect = new Konva.Rect({
                                         x: state.vector.X, y: state.vector.Y, width:(stageDim.width-size.width)/20, height:size.height/100
                                 })
+                                let cache:EntityInfo = {
+                                    kind: "BOMB", status: state.status, id: id, lastTickUpdate:tickRef.current
+                                }
+                                grenadeCache.current.set(id, cache)
                                 switch (state.status) {
                                     case "DROPPED":
                                         rect.fill("white")
@@ -489,9 +540,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                 }
                                 
                             } else {
-                                let gren = new Konva.Group({name:`${state.grenade} ${state.status}`, id:id})
-                                
-                                // console.log(mainGrou as Konva.Group)
+                                let gren = new Konva.Group({name:`GRENADE ${state.grenade} ${state.status}`, id:id})
                                 let circl = new Konva.Circle({
                                         x: state.vector.X, y: state.vector.Y, radius: size.width * .01 , fill:"white"
                                     })
@@ -499,11 +548,12 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                         x: state.vector.X + 5, y: state.vector.Y - 3, text: state.grenade,
                                         fill:"white" , fontSize:10 
                                 })
+                                let cache:EntityInfo = {
+                                    kind: "GRENADE", status: state.status, id: id, lastTickUpdate:tickRef.current
+                                }
+                                grenadeCache.current.set(id, cache)
                                 gren.add(circl, label)
-                                // console.log(`CREATED AT ${tickRef.current} ${state.grenade} ${state.status}`)
-                                // console.log(gren)
                                 map.set(id, gren)
-                                // layerRef.current!.add(gren);
                                 mainGroup.add(gren)
                             }
                             
@@ -519,7 +569,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                             return;
                         } else {
                             if (state.status == "ENDING") {return}
-                            let fire = new Konva.Group({name:`fire ${state.status}`})
+                            let fire = new Konva.Group({name:`FIRE ${state.status}`})
                             let circl = new Konva.Circle({
                                 x : state.vertices[0].X , y: state.vertices[0].Y, radius: size.height * .02, fill:"orange"
                             })
@@ -612,7 +662,6 @@ function DemoPlayback({file, map}:{file:String, map:String}){
         }, layerRef.current);
         anim.start()       
         return () => {
-            observer.disconnect()
             anim.stop()
         };
         }, [isPlaying.playing, round]);
@@ -638,6 +687,9 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                 grenade_pos: new Map<number, Map<string, GrenadeState>>(),
                 fire_vertices: new Map<number, Map<string, FireState>>(),
             };
+            if (grenadeLife.current == null){
+                grenadeLife.current = new Map();
+            }
             // Assume that each tick in PlayerState also exists in Grenade
             pos.forEach(([tick, playervec],i) => {
                 const info = Array.from(Object.entries(playervec))
@@ -658,9 +710,13 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                     tick_map.player_pos.set(0, player_pos)
                     round_begin_ticks.current.push(Number(tick))
                     tickRef.current = Number(tick)
+                    
                 }
-                if ((info.length-1) == i){
-                    round_begin_ticks.current.push(Number(tick))
+                if (i == (pos.length-1)){
+                    round_begin_ticks.current[1] = (Number(tick))
+                    // if (progressRef.current) {
+                    //     progressRef.current.max = tick
+                    // }
                 }
             });
             grenades.forEach(([tick, grenadeEvent]) => {
@@ -672,6 +728,44 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                     }
                     const grenade_state: GrenadeState = {
                         vector: place, thrownBy: grenstate.thrownBy, thrownById: grenstate.thrownById, grenade:grenstate.grenade, status:grenstate.status
+                    }
+                    const state = grenadeLife.current.get(grenid)
+                    if (state == null){
+                       const ent:EntityLife = {
+                            grenadeString: grenstate.grenade, lastSavedState: grenstate.status, flyingStart: Number(tick), flyingExpire: -1
+                       } 
+                       grenadeLife.current.set(grenid, ent)
+                    } else {
+                        if (state.lastSavedState != grenstate.status){
+                            switch(grenstate.status){
+                                // FLYING -> BLOOMED
+                                case "BLOOMED":
+                                    state.lastSavedState = "BLOOMED"
+                                    state.flyingExpire = Number(tick)
+                                    state.bloomedStart = Number(tick)
+                                break;
+                                case "EXPIRED":
+                                    // BLOOMED -> EXPIRED
+                                    state.lastSavedState = "EXPIRED"
+                                    if (grenstate.grenade == "Smoke Grenade"){
+                                        state.bloomExpiry = Number(tick)
+                                    } 
+                                    // FLYING -> EXPIRED
+                                    else {
+                                        state.flyingExpire = Number(tick)
+                                    }
+                                    grenadeLife.current.set(grenid, state)
+                                break;
+                                // FLYING -> LANDED 
+                                // THIS IS MOLLIES
+                                case "LANDED":
+                                    state.lastSavedState = "LANDED"
+                                    state.flyingExpire = Number(tick)
+                                    grenadeLife.current.set(grenid, state)
+                                break;
+
+                            }
+                        }
                     }
                     grenade_pos.set(grenid, grenade_state)
                 })
@@ -846,7 +940,14 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                     }}>forward</button>
             </div>
             <div className="progress">
-                <progress style={{width: "100%"}} value={round_begin_ticks.current[1]-tickRef.current} max={round_begin_ticks.current[1]-round_begin_ticks.current[0]}/>
+                {stats && 
+                    <input id="playback-slider" onChange={(e) => {
+                        const target = parseInt(e.target.value, 10)
+                        tickRef.current = target;
+                        // setPlaying((prev) => ({ ...prev, tick_no: target }));
+                    }} ref={progressRef} type="range" style={{width: "100%"}}  min={tickRef.current}  value={tickRef.current} max={round_begin_ticks.current[1]}/>
+                }
+                
             </div>
             <div className="rounds">
                 <ul style={{justifyContent:"center", marginTop:"10px"}}>
@@ -864,7 +965,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                         getPlayerRef().delete(key)
                                     }
                                 })
-                                hudRef.current!.forEach((g, id) => { 
+                                hudRef.current!.forEach((g) => { 
                                     let node = g.findOne((n:Konva.Node) => {
                                         return n.getAttr("name") == "hpbar"
                                     })

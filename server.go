@@ -169,8 +169,9 @@ func main() {
 				}
 				me.MapMeta = ex.GetMapMetadata(gamemap)
 
-				query = `SELECT p.PLAYERID, p.PLAYERNAME, pe.HP, pe.WEAPON, pe.HAS_BOMB, pe.P_ACTION,
-							pe.KILLS, pe.ASSIST, pe.DEATHS, pe.ARMOR, pe.DINERO,
+				query = `SELECT p.PLAYERID, p.PLAYERNAME, pe.HP, pe.ACTIVE_WEAPON, pe.HAS_BOMB, pe.P_ACTION,
+							pe.KILLS, pe.ASSISTS, pe.DEATHS, pe.ARMOR, pe.DINERO,
+							pe.PRIMARY_SLOT, pe.SECONDARY_SLOT, pe.SLOT1, pe.SLOT2, pe.SLOT3, pe.SLOT4, pe.FLASHED_DURATION,
 							pe.XPOS, pe.YPOS, pe.ZPOS, pe.TICK, rp.SIDE
 					from PLAYER_EVENTS as pe 
 					JOIN PLAYERS p on p.PLAYERID = pe.PLAYERID 
@@ -189,10 +190,13 @@ func main() {
 					var Name, weapon string
 					var hasBomb bool
 					var tick, side, hp, kills, assist, deaths, armor, dinero int
+					var primary, secondary, slot1, slot2, slot3, slot4 int
 					var action PlayerAction
-					var x, y, z float64
+					var x, y, z, flashedDur float64
 					var playerid int64
-					rows.Scan(&playerid, &Name, &hp, &weapon, &hasBomb, &action, &kills, &assist, &deaths, &armor, &dinero, &x, &y, &z, &tick, &side)
+					rows.Scan(&playerid, &Name, &hp, &weapon, &hasBomb, &action, &kills, &assist, &deaths, &armor,
+						&dinero, &primary, &secondary, &slot1, &slot2, &slot3, &slot4, &flashedDur,
+						&x, &y, &z, &tick, &side)
 					position := r3.Vector{X: x, Y: y, Z: z}
 					if _, ok := RE.PlayerNames[playerid]; !ok {
 						RE.PlayerNames[playerid] = PlayerInfo{Name: Name, Side: side}
@@ -202,10 +206,11 @@ func main() {
 						RE.PlayerPositions[tick] = make(map[int64]PlayerState)
 					}
 					RE.PlayerPositions[tick][playerid] = PlayerState{
-						Position: position, Weapon: weapon, HP: hp,
+						Position: position, Active_Weapon: weapon, HP: hp,
 						Kills: kills, Assists: assist, Deaths: deaths,
 						Armor: armor, Money: dinero, HasBomb: hasBomb,
-						Action: action,
+						Action: action, Primary: primary, Secondary: secondary, Slot1: slot1, Slot2: slot2,
+						Slot3: slot3, Slot4: slot4, BlindDuration: flashedDur,
 					}
 
 					defer rows.Close()

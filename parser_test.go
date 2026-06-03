@@ -70,6 +70,10 @@ func TestConnect(t *testing.T) {
 			return
 		}
 		t.Logf("%v got a kill", k.Killer.Name)
+		t.Logf("%v was in his inventory", k.Killer.Weapons())
+	})
+	p.RegisterEventHandler(func(pf events.PlayerFlashed) {
+		t.Logf("%v got flashed by %v for %v seconds", pf.Player.Name, pf.Attacker.Name, pf.FlashDuration().Seconds())
 	})
 	p.RegisterEventHandler(func(r events.RoundEndOfficial) {
 		t.Logf("Round %v ended", round)

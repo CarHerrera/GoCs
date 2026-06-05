@@ -66,7 +66,7 @@ type Team struct {
 }
 type PlayerState struct {
 	Position      r3.Vector    `json:"vector"`
-	Active_Weapon string       `json:"active_weapon"`
+	Active_Weapon int          `json:"active_weapon"`
 	Primary       int          `json:"primary"`
 	Secondary     int          `json:"secondary"`
 	Slot1         int          `json:"slot1"`
@@ -113,7 +113,7 @@ type posEntry struct {
 	primary, seconday, slot1, slot2, slot3, slot4 int
 	hasBomb                                       bool
 	x, y, z, flashDur                             float64
-	weapon                                        string
+	weapon                                        int
 	action                                        PlayerAction
 }
 type GrenadeEntry struct {
@@ -419,11 +419,11 @@ func get_pos_entry(player *common.Player, tick int, round int, matchid int, acti
 			}
 		}
 	}
-	var activeWep string
+	var activeWep int
 	if player.ActiveWeapon() == nil {
-		activeWep = ""
+		activeWep = 0
 	} else {
-		activeWep = player.ActiveWeapon().String()
+		activeWep = int(player.ActiveWeapon().Type)
 	}
 	pE := posEntry{
 		matchid, round, tick, int(player.GetTeam()), player.SteamID64, player.Health(), player.Kills(),

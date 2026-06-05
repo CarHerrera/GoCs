@@ -3,6 +3,7 @@ import { URLImage } from "./URLImage";
 import { useEffect, useState, useRef } from "react";
 import Konva from "konva";
 import useImage from "use-image";
+
 function playerBoxInfo({width, height, tpad, lpad, i, name}:{width:number, height:number, tpad:number,lpad:number, i:number, name:string}){
     let color ="white"
     switch (i){

@@ -187,10 +187,10 @@ func main() {
 					panic(err)
 				}
 				for rows.Next() {
-					var Name, weapon string
+					var Name string
 					var hasBomb bool
 					var tick, side, hp, kills, assist, deaths, armor, dinero int
-					var primary, secondary, slot1, slot2, slot3, slot4 int
+					var primary, secondary, slot1, slot2, slot3, slot4, weapon int
 					var action PlayerAction
 					var x, y, z, flashedDur float64
 					var playerid int64

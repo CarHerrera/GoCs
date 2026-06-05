@@ -29,7 +29,8 @@ html, body, #root {
 }
 #playbackGrid{
     display:grid;
-    grid-template-columns: 1fr 2.5fr;
+    width: 100%;
+    grid-template-columns: .75fr 2.75fr;
     grid-template-rows: repeat(2, minmax(0, 1fr)) auto; 
     grid-template-areas:
         "team1 map"

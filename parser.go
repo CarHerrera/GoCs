@@ -17,118 +17,6 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
 )
 
-type BaseDemo struct {
-	FileName  string  `json:"filename,string"`
-	ModDate   string  `json:"date,string"`
-	FileSize  string  `json:"filesize,string"`
-	Map       string  `json:"map,string"`
-	TeamStats [2]Team `json:"team_stats"`
-	Parsed    bool    `json:"parsed"`
-	BaseStats bool    `json:"stats"`
-	ID        int
-}
-
-type PlayerStats struct {
-	Kills   int `json:"kills"`
-	Deaths  int `json:"deaths"`
-	Assists int `json:"assists"`
-}
-type MatchEvents struct {
-	RoundPositions RoundEvents                 `json:"round_events"`
-	Rounds         int                         `json:"rounds"`
-	MapMeta        ex.Map                      `json:"map"`
-	Teams          map[string]map[int64]string `json:"teams"`
-}
-type RoundEvents struct {
-	// map[TICK] -> Map(ID) i.e playerid or ent id -> State/Info
-	PlayerPositions map[int]map[int64]PlayerState `json:"player_positions"`
-	PlayerNames     map[int64]PlayerInfo          `json:"player_info"`
-	GrenadeEvents   map[int]map[int]GrenadeState  `json:"grenade_events"`
-	FirePositions   map[int]map[int]FireState     `json:"fire_events"`
-}
-type PlayerInfo struct {
-	Name string `json:"name"`
-	Side int    `json:"side"`
-}
-type Player struct {
-	Name  string      `json:"name"`
-	ID    int64       `json:"ID"`
-	Stats PlayerStats `json:"stats"`
-}
-type Team struct {
-	ID             int               `json:"ID"`
-	ClanName       string            `json:"Clanname"`
-	EndScore       int               `json:"Endscore"`
-	TScore         int               `json:"TScore"`
-	CTScore        int               `json:"CTScore"`
-	PlayingPlayers map[string]Player `json:"Playing"`
-	inited         bool
-}
-type PlayerState struct {
-	Position      r3.Vector    `json:"vector"`
-	Active_Weapon int          `json:"active_weapon"`
-	Primary       int          `json:"primary"`
-	Secondary     int          `json:"secondary"`
-	Slot1         int          `json:"slot1"`
-	Slot2         int          `json:"slot2"`
-	Slot3         int          `json:"slot3"`
-	Slot4         int          `json:"slot4"`
-	HP            int          `json:"hp"`
-	Kills         int          `json:"kills"`
-	Assists       int          `json:"assists"`
-	Deaths        int          `json:"deaths"`
-	Armor         int          `json:"armor"`
-	Money         int          `json:"dinero"`
-	Action        PlayerAction `json:"action"`
-	HasBomb       bool         `json:"hasBomb"`
-	BlindDuration float64      `json:"blind_dur"`
-}
-type PlayerAction int
-
-const (
-	isMoving PlayerAction = iota
-	beginPlanting
-	donePlanting
-	abortedPlant
-	beginDefusing
-	doneDefusing
-	abortedDefuse
-)
-
-type GrenadeState struct {
-	Position     r3.Vector `json:"vector"`
-	Grenade      string    `json:"grenade"`
-	ThrownByName string    `json:"thrownBy"`
-	ThrownByid   int64     `json:"thrownById"`
-	Status       string    `json:"status"`
-}
-type FireState struct {
-	Vertices []r2.Point `json:"vertices"`
-	Status   string     `json:"status"`
-}
-type posEntry struct {
-	matchID, roundNo, tick, side                  int
-	steamID                                       uint64
-	hp, kills, assists, deaths, armor, money      int
-	primary, seconday, slot1, slot2, slot3, slot4 int
-	hasBomb                                       bool
-	x, y, z, flashDur                             float64
-	weapon                                        int
-	action                                        PlayerAction
-}
-type GrenadeEntry struct {
-	matchID, roundNo, tick int
-	entid                  int
-	steamID                uint64
-	x, y, z                float64
-	grenade, state         string
-}
-type FireEntry struct {
-	matchID, roundNo, tick, entid, fireid int
-	x, y                                  float64
-	state                                 string
-}
-
 func getDemoPath() string {
 	return os.Getenv("DEMO_PATH")
 }
@@ -396,28 +284,34 @@ func get_pos_entry(player *common.Player, tick int, round int, matchid int, acti
 	inv := player.Weapons()
 	hasBomb := false
 	var primary, secondary, slot1, slot2, slot3, slot4 common.EquipmentType
+	var grenades []common.EquipmentType
 	for _, wep := range inv {
 		if wep.Type == common.EqBomb {
 			hasBomb = true
 		}
-		if wep.Class() == common.EqClassRifle || wep.Class() == common.EqClassRifle || wep.Class() == common.EqClassHeavy {
+		switch wep.Class() {
+		case common.EqClassRifle, common.EqClassHeavy, common.EqClassSMG:
+			// Note: Cleaned up your duplicate EqClassRifle check here too!
 			primary = wep.Type
-		} else if wep.Class() == common.EqClassPistols {
+		case common.EqClassPistols:
 			secondary = wep.Type
-		} else if wep.Class() == common.EqClassGrenade {
-			if slot1 == 0 {
-				slot1 = wep.Type
-			}
-			if slot2 == 0 && slot1 != 0 {
-				slot2 = wep.Type
-			}
-			if slot3 == 0 && slot2 != 0 {
-				slot3 = wep.Type
-			}
-			if slot4 == 0 && slot3 != 0 {
-				slot4 = wep.Type
+		case common.EqClassGrenade:
+			if len(grenades) < 4 {
+				grenades = append(grenades, wep.Type)
 			}
 		}
+	}
+	if len(grenades) > 0 {
+		slot1 = grenades[0]
+	}
+	if len(grenades) > 1 {
+		slot2 = grenades[1]
+	}
+	if len(grenades) > 2 {
+		slot3 = grenades[2]
+	}
+	if len(grenades) > 3 {
+		slot4 = grenades[3]
 	}
 	var activeWep int
 	if player.ActiveWeapon() == nil {

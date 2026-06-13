@@ -171,17 +171,19 @@ func main() {
 
 				query = `SELECT p.PLAYERID, p.PLAYERNAME, pe.HP, pe.ACTIVE_WEAPON, pe.HAS_BOMB, pe.P_ACTION,
 							pe.KILLS, pe.ASSISTS, pe.DEATHS, pe.ARMOR, pe.DINERO,
-							pe.PRIMARY_SLOT, pe.SECONDARY_SLOT, pe.SLOT1, pe.SLOT2, pe.SLOT3, pe.SLOT4, pe.FLASHED_DURATION,
+							pe.PRIMARY_SLOT, pe.SECONDARY_SLOT, pe.SMOKE_SLOT, pe.FIRE_SLOT, pe.HE_SLOT, pe.DECOY_SLOT, 
+							pe.FLASH_SLOT1, pe.FLASH_SLOT2, pe.FLASHED_DURATION,
 							pe.XPOS, pe.YPOS, pe.ZPOS, pe.TICK, rp.SIDE
 					from PLAYER_EVENTS as pe 
 					JOIN PLAYERS p on p.PLAYERID = pe.PLAYERID 
 					JOIN ROUND_PARTICIPANTS rp ON pe.MATCHID = rp.MATCHID AND pe.ROUND_NO = rp.ROUND_NO AND pe.PLAYERID = rp.PLAYERID 
 					WHERE pe.MATCHID = ? AND pe.ROUND_NO = ? ORDER BY TICK ASC`
-				var RE RoundEvents
-				RE.PlayerPositions = make(map[int]map[int64]PlayerState)
-				RE.PlayerNames = make(map[int64]PlayerInfo)
-				RE.GrenadeEvents = make(map[int]map[int]GrenadeState)
-				RE.FirePositions = make(map[int]map[int]FireState)
+				var R RoundInfo
+				R.PlayerPositions = make(map[int]map[int64]PlayerState)
+				R.PlayerNames = make(map[int64]PlayerInfo)
+				R.GrenadeEvents = make(map[int]map[int]GrenadeState)
+				R.FirePositions = make(map[int]map[int]FireState)
+				R.RoundTimeline = make(map[int]RoundEvent)
 				rows, err := DB.Query(query, matchid, c.Params("roundNo"))
 				if err != nil {
 					panic(err)
@@ -190,27 +192,28 @@ func main() {
 					var Name string
 					var hasBomb bool
 					var tick, side, hp, kills, assist, deaths, armor, dinero int
-					var primary, secondary, slot1, slot2, slot3, slot4, weapon int
+					var primary, secondary, smoke, fire, he, decoy, flash1, flash2, weapon int
 					var action PlayerAction
 					var x, y, z, flashedDur float64
 					var playerid int64
 					rows.Scan(&playerid, &Name, &hp, &weapon, &hasBomb, &action, &kills, &assist, &deaths, &armor,
-						&dinero, &primary, &secondary, &slot1, &slot2, &slot3, &slot4, &flashedDur,
+						&dinero, &primary, &secondary, &smoke, &fire, &he, &decoy, &flash1, &flash2, &flashedDur,
 						&x, &y, &z, &tick, &side)
 					position := r3.Vector{X: x, Y: y, Z: z}
-					if _, ok := RE.PlayerNames[playerid]; !ok {
-						RE.PlayerNames[playerid] = PlayerInfo{Name: Name, Side: side}
+					if _, ok := R.PlayerNames[playerid]; !ok {
+						R.PlayerNames[playerid] = PlayerInfo{Name: Name, Side: side}
 					}
 					// No Tick has been created
-					if len(RE.PlayerPositions[tick]) == 0 {
-						RE.PlayerPositions[tick] = make(map[int64]PlayerState)
+					if len(R.PlayerPositions[tick]) == 0 {
+						R.PlayerPositions[tick] = make(map[int64]PlayerState)
 					}
-					RE.PlayerPositions[tick][playerid] = PlayerState{
+					R.PlayerPositions[tick][playerid] = PlayerState{
 						Position: position, Active_Weapon: weapon, HP: hp,
 						Kills: kills, Assists: assist, Deaths: deaths,
 						Armor: armor, Money: dinero, HasBomb: hasBomb,
-						Action: action, Primary: primary, Secondary: secondary, Slot1: slot1, Slot2: slot2,
-						Slot3: slot3, Slot4: slot4, BlindDuration: flashedDur,
+						Action: action, Primary: primary, Secondary: secondary, SmokeSlot: smoke,
+						FireSlot: fire, HESlot: he, DecoySlot: decoy, Flashslot1: flash1, FlashSlot2: flash2,
+						BlindDuration: flashedDur,
 					}
 
 					defer rows.Close()
@@ -221,18 +224,18 @@ func main() {
 				WHERE GE.MATCHID = ? AND GE.ROUND_NO = ? ORDER BY TICK ASC;`
 				rows, err = DB.Query(query, matchid, c.Params("roundNo"))
 				for rows.Next() {
-					var Name, grenade, status string
-					var tick, grenadeid int
+					var Name, status string
+					var tick, grenadeid, grenade int
 					var x, y, z float64
 					var playerid int64
 					rows.Scan(&playerid, &grenadeid, &Name, &grenade, &x, &y, &z, &tick, &status)
 					position := r3.Vector{X: x, Y: y, Z: z}
 
 					// No Tick has been created
-					if len(RE.GrenadeEvents[tick]) == 0 {
-						RE.GrenadeEvents[tick] = make(map[int]GrenadeState)
+					if len(R.GrenadeEvents[tick]) == 0 {
+						R.GrenadeEvents[tick] = make(map[int]GrenadeState)
 					}
-					RE.GrenadeEvents[tick][grenadeid] = GrenadeState{
+					R.GrenadeEvents[tick][grenadeid] = GrenadeState{
 						Position: position, Grenade: grenade, ThrownByName: Name, ThrownByid: playerid, Status: status,
 					}
 
@@ -250,15 +253,32 @@ func main() {
 					var state string
 					rows.Scan(&entid, &fireid, &tick, &x, &y, &state)
 					position := r2.Point{X: x, Y: y}
-					if len(RE.FirePositions[tick]) == 0 {
-						RE.FirePositions[tick] = make(map[int]FireState)
+					if len(R.FirePositions[tick]) == 0 {
+						R.FirePositions[tick] = make(map[int]FireState)
 					}
 
-					RE.FirePositions[tick][entid] = FireState{
-						Vertices: append(RE.FirePositions[tick][entid].Vertices, position), Status: state,
+					R.FirePositions[tick][entid] = FireState{
+						Vertices: append(R.FirePositions[tick][entid].Vertices, position), Status: state,
 					}
 				}
-				me.RoundPositions = RE
+				query = `SELECT TICK, EVENT_TYPE, PLAYER1ID, PLAYER2ID
+				FROM ROUND_EVENTS
+				WHERE MATCHID = ? AND ROUND_NO = ?
+				ORDER BY TICK`
+				rows, err = DB.Query(query, matchid, c.Params("roundNo"))
+				for rows.Next() {
+					var tick, etype int
+					var p1id, p2id int64
+					rows.Scan(&tick, &etype, &p1id, &p2id)
+					if len(R.FirePositions[tick]) == 0 {
+						R.FirePositions[tick] = make(map[int]FireState)
+					}
+
+					R.RoundTimeline[tick] = RoundEvent{
+						Player1: int64(p1id), Player2: int64(p2id), Event: TrackedEvents(etype),
+					}
+				}
+				me.RoundPositions = R
 				me.Rounds = rounds
 				// fmt.Printf("Out:%v", me.RoundPositions[1])
 				return c.Status(200).JSON(me)
@@ -288,7 +308,7 @@ func main() {
 				log.Printf("Parsing Stats")
 				demo_stats, err := parse_demo_stats(demo, row.ID)
 				if err != nil {
-					log.Printf("%v failed to parse.", demo)
+					log.Printf("%v failed to parse. %v", demo, err)
 					return c.Status(500).JSON(fiber.Map{
 						"message": "Failed to parse error",
 						"success": "false",

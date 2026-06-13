@@ -1,138 +1,117 @@
-export function type_to_svg(gunType:number):string{
-    let path = 'equipment/'
-    switch(gunType){
-        case 1:
-            path += 'hkp2000.svg'
-            break
-        case 2:
-            path += 'glock.svg'
-            break
-        case 3:
-            path += 'p250.svg'
-            break
-        case 4:
-            path += 'deagle.svg'
-            break
-        case 5:
-            path += 'fiveseven.svg'
-            break
-        case 6:
-            path += 'elite.svg'
-            break
-        case 7:
-            path += 'tec9.svg'
-            break
-        case 8: 
-            path += 'cz75a.svg'
-            break
-        case 9: 
-            path += 'usp_silencer.svg'
-            break
-        case 10:
-            path += 'revolver.svg'
-            break
-        case 101: 
-            path += 'mp7.svg'
-            break
-        case 102: 
-            path += 'mp9.svg'
-            break
-        case 103:
-            path += 'bizon.svg'
-            break
-        case 104: 
-            path += 'mac10.svg'
-            break
-        case 105:
-            path += 'ump45.svg'
-            break
-        case 106: 
-            path += 'p90.svg'
-            break
-        case 107:
-            path +='mp5sd.svg'
-            break
-        case 201:
-            path +='sawedoff.svg'
-            break
-        case 202:
-            path +='nova.svg'
-            break
-        case 203:
-            path +='mag7.svg'
-            break
-        case 204: 
-            path +='xm1014.svg'
-            break
-        case 205:
-            path +='m249.svg'
-            break
-        case 206:
-            path += 'negev.svg'
-            break
-        case 301:
-            path += 'galilar.svg'
-            break
-        case 302: 
-            path += 'famas.svg'
-            break
-        case 303:
-            path += 'ak47.svg'
-            break
-        case 304:
-            path += 'm4a1.svg'
-            break
-        case 305:
-            path += 'm4a1_silencer.svg'
-            break
-        case 306:
-            path +='ssg08.svg'
-            break
-        case 307:
-            path += 'sg556.svg'
-            break
-        case 308: 
-            path += 'aug.svg'
-            break
-        case 309:
-            path += 'awp.svg'
-            break
-        case 310:
-            path +='scar20.svg'
-            break
-        case 311:
-            path +='g3sg1.svg'
-            break
-        case 404:
-            path += 'c4.svg'
-            break
-        case 405:
-            path += "knife.svg"
-            break
-        case 501:
-            path += 'decoy.svg'
-            break
-        case 502: 
-            path +='molotov.svg'
-            break
-        case 503:
-            path +='incgrenade.svg'
-            break
-        case 504:
-            path +='flashbang.svg'
-            break
-        case 505:
-            path +='smokegrenade.svg'
-            break
-        case 506:
-            path += 'hegrenade.svg'
-            break
-        case 0:
-        case 407:
-        default:
-            path += 'world.svg'
-        break
-    }
-    return path;
-}
+export const WeaponType = {
+    // Pistols
+    P2000: 1,
+    Glock: 2,
+    P250: 3,
+    Deagle: 4,
+    Fiveseven: 5,
+    Elite: 6,
+    Tec9: 7,
+    CZ: 8,
+    UspSilencer: 9,
+    Revolver: 10,
 
+    // SMGs
+    Mp7: 101,
+    Mp9: 102,
+    Bizon: 103,
+    Mac10: 104,
+    Ump45: 105,
+    P90: 106,
+    Mp5sd: 107,
+
+    // Heavy
+    Sawedoff: 201,
+    Nova: 202,
+    Swag7: 203,
+    Xm1014: 204,
+    M249: 205,
+    Negev: 206,
+
+    // Rifles
+    Galilar: 301,
+    Famas: 302,
+    Ak47: 303,
+    M4a1: 304,
+    M4a1Silencer: 305,
+    Ssg08: 306,
+    Sg556: 307,
+    Aug: 308,
+    Awp: 309,
+    Scar20: 310,
+    G3sg1: 311,
+
+    // Gear & Utility
+    C4: 404,
+    Knife: 405,
+    WorldFallback: 407,
+
+    // Grenades
+    Decoy: 501,
+    Molotov: 502,
+    Incgrenade: 503,
+    Flashbang: 504,
+    Smokegrenade: 505,
+    Hegrenade: 506,
+
+    // Default
+    None: 0,
+} as const;
+export type WeaponTypeValue = typeof WeaponType[keyof typeof WeaponType];
+const WeaponSvgMap: Record<number, string> = {
+    [WeaponType.P2000]: 'hkp2000.svg',
+    [WeaponType.Glock]: 'glock.svg',
+    [WeaponType.P250]: 'p250.svg',
+    [WeaponType.Deagle]: 'deagle.svg',
+    [WeaponType.Fiveseven]: 'fiveseven.svg',
+    [WeaponType.Elite]: 'elite.svg',
+    [WeaponType.Tec9]: 'tec9.svg',
+    [WeaponType.CZ]: 'cz75a.svg',
+    [WeaponType.UspSilencer]: 'usp_silencer.svg',
+    [WeaponType.Revolver]: 'revolver.svg',
+
+    [WeaponType.Mp7]: 'mp7.svg',
+    [WeaponType.Mp9]: 'mp9.svg',
+    [WeaponType.Bizon]: 'bizon.svg',
+    [WeaponType.Mac10]: 'mac10.svg',
+    [WeaponType.Ump45]: 'ump45.svg',
+    [WeaponType.P90]: 'p90.svg',
+    [WeaponType.Mp5sd]: 'mp5sd.svg',
+
+    [WeaponType.Sawedoff]: 'sawedoff.svg',
+    [WeaponType.Nova]: 'nova.svg',
+    [WeaponType.Swag7]: 'mag7.svg',
+    [WeaponType.Xm1014]: 'xm1014.svg',
+    [WeaponType.M249]: 'm249.svg',
+    [WeaponType.Negev]: 'negev.svg',
+
+    [WeaponType.Galilar]: 'galilar.svg',
+    [WeaponType.Famas]: 'famas.svg',
+    [WeaponType.Ak47]: 'ak47.svg',
+    [WeaponType.M4a1]: 'm4a1.svg',
+    [WeaponType.M4a1Silencer]: 'm4a1_silencer.svg',
+    [WeaponType.Ssg08]: 'ssg08.svg',
+    [WeaponType.Sg556]: 'sg556.svg',
+    [WeaponType.Aug]: 'aug.svg',
+    [WeaponType.Awp]: 'awp.svg',
+    [WeaponType.Scar20]: 'scar20.svg',
+    [WeaponType.G3sg1]: 'g3sg1.svg',
+
+    [WeaponType.C4]: 'c4.svg',
+    [WeaponType.Knife]: 'knife.svg',
+    [WeaponType.WorldFallback]: 'world.svg',
+
+    [WeaponType.Decoy]: 'decoy.svg',
+    [WeaponType.Molotov]: 'molotov.svg',
+    [WeaponType.Incgrenade]: 'incgrenade.svg',
+    [WeaponType.Flashbang]: 'flashbang.svg',
+    [WeaponType.Smokegrenade]: 'smokegrenade.svg',
+    [WeaponType.Hegrenade]: 'hegrenade.svg',
+    
+    [WeaponType.None]: 'world.svg',
+};
+export function type_to_svg(gunType: WeaponTypeValue | number): string {
+    // Look up file name in the map, default to 'world.svg' if not found
+    const file = WeaponSvgMap[gunType] || 'world.svg';
+    return `equipment/${file}`;
+}

@@ -31,10 +31,9 @@ html, body, #root {
     display:grid;
     width: 100%;
     grid-template-columns: .75fr 2.75fr;
-    grid-template-rows: repeat(2, minmax(0, 1fr)) auto; 
+    grid-template-rows: repeat(1, minmax(0, 1fr)) auto; 
     grid-template-areas:
-        "team1 map"
-        "team2 map"
+        "options map"
         "player progress"
         "rounds rounds";
     height: calc(100vh);
@@ -53,7 +52,7 @@ html, body, #root {
     position: relative;
     height:100%;
 }
-.team1, .team2 {
+.options {
     /* If content inside teams gets long, they will scroll individually */
     height: 100%;
     overflow-y: auto; 

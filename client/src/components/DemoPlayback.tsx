@@ -1,9 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import { Layer, Stage, Text, Circle, Group, Rect, Image} from 'react-konva';
-import { URLImage } from "./URLImage";
+import { URLImage } from "../URLImage";
 import Konva from "konva";
 import useImage from "use-image";
-import { type_to_svg, WeaponType } from './helpers/equipIdToSvg'
+import { type_to_svg, WeaponType } from '../helpers/equipIdToSvg'
 const PlayerAction = {
     isMoving: 1,
     beginPlanting: 2,
@@ -116,6 +116,10 @@ interface EntityInfo{
     text?: Konva.Text 
     bomb?: Konva.Image 
 }
+interface GrenadeState{
+    status: string
+    tick: number
+}
 interface EntityLife{
     grenadeType: number
     lastSavedState: string
@@ -123,6 +127,7 @@ interface EntityLife{
     bloomedStart?: number
     bloomExpiry?: number
     flyingExpire: number
+    stateChanges?: GrenadeState[]
 }
 interface FireEntity {
     circle?: Konva.Circle
@@ -177,6 +182,7 @@ interface PlayBackCache{
     WeaponImageCache: Map<string, HTMLImageElement>
     playback: PlayBackRef | null
     size: number
+    PlaybackGroup: Konva.Group | null;
 }
 type WeaponIconProps = Omit<Konva.ImageConfig, 'image'> & { src: string }
 function WeaponIcon({src, ...rest}: WeaponIconProps){
@@ -264,24 +270,46 @@ function playerBoxInfo({playerBox, hud, cache}:{playerBox:PlayerBox, hud: Map<st
 
 function RedrawAtTicK(cache:PlayBackCache, tick:number){
     // Assume we don't need the player positions right now since they are not static or state based. 
-    const {PlayerCache, WeaponImageCache, PlayerHudCache, GrenadeCache, FireCache, FireLife, GrenadeLife, playback, size} = cache
+    const {PlayerCache, WeaponImageCache, PlayerHudCache, GrenadeCache, FireCache, FireLife, GrenadeLife, playback, size, PlaybackGroup} = cache
     if (playback != null){
-        console.log(`REDRAWING ${tick}`)
+        // console.log(`REDRAWING ${tick}`)
         GrenadeLife.forEach((el, id) => {
             if (GrenadeCache.has(id)){
-                console.log(`Grenade ${id} has already been created at ${tick} ${el.flyingStart}`)
+                // console.log(`Grenade ${id} has already been created at ${tick} ${el.flyingStart}`)
                 const cachedgren = GrenadeCache.get(id)
                 if (cachedgren!.grenade) {
                     let tickCorrection = tick
                     while (!playback.grenade_pos.has(tickCorrection)){
                         tickCorrection -= 1
+                        if (tickCorrection < el.flyingStart) {
+                            tickCorrection = el.flyingStart
+                            break
+                        }
                     }
-                    console.log(playback.grenade_pos.get(tickCorrection))
-                    console.log(id)
-                    const correctedPos = playback.grenade_pos.get(tickCorrection)!.get(id)?.vector
+                    let correctedPos:MapCoordinate
+                    
+                    if (playback.grenade_pos.has(tickCorrection)){
+                        if (playback.grenade_pos.get(tickCorrection)!.has(id)){
+                            correctedPos = playback.grenade_pos.get(tickCorrection)!.get(id)!.vector
+                        } else {
+                            if (playback.grenade_pos.has(el.flyingStart)){
+                                correctedPos = playback.grenade_pos.get(el.flyingStart)!.get(id)!.vector
+                            } else {
+                                console.log(1)
+                                console.log(id)
+                                console.log(tick)
+                                console.log(tickCorrection)
+                                console.log(el.flyingStart)
+                                console.log(playback.grenade_pos)
+                                console.log(playback.grenade_pos.get(tickCorrection))
+                                console.log(playback.grenade_pos.get(el.flyingStart))
+                            }
+                        }
+                    } 
+                    
                     switch (el.grenadeType){
                         case WeaponType.Smokegrenade:
-                            if(tick >= el.flyingExpire! && tick <= el.bloomExpiry!){
+                            if(tick >= el.bloomedStart! && tick < el.bloomExpiry!){
                                 const state = playback.grenade_pos.get(el.bloomedStart!)!.get(id)
                                 cachedgren!.grenade.radius(size * 0.035)
                                 cachedgren!.grenade!.x(state!.vector.X)
@@ -292,12 +320,7 @@ function RedrawAtTicK(cache:PlayBackCache, tick:number){
                                 cachedgren!.grenade!.hide()
                                 cachedgren!.text!.hide()
                                 cachedgren!.status = "EXPIRED"
-                            } else if (tick < el.flyingStart){
-                                cachedgren!.grenade!.radius(size * 0.01)
-                                cachedgren!.grenade!.hide()
-                                cachedgren!.text!.hide()
-                                cachedgren!.status = "FLYING"
-                            } else if (tick > el.flyingStart){
+                            } else if (tick > el.flyingStart && tick < el.flyingExpire){
                                 cachedgren!.grenade!.show()
                                 cachedgren!.grenade!.radius(size * 0.01)
                                 cachedgren!.grenade!.x(correctedPos!.X)
@@ -306,6 +329,9 @@ function RedrawAtTicK(cache:PlayBackCache, tick:number){
                                 cachedgren!.text!.x(correctedPos!.X)
                                 cachedgren!.text!.y(correctedPos!.Y)
                                 cachedgren!.status = "FLYING"
+                            } else {
+                                cachedgren!.grenade!.hide()
+                                cachedgren!.text!.hide()
                             }
                         break;
                         case WeaponType.Hegrenade:
@@ -325,8 +351,6 @@ function RedrawAtTicK(cache:PlayBackCache, tick:number){
                                 cachedgren!.grenade!.y(correctedPos!.Y)
                                 cachedgren!.text!.x(correctedPos!.X)
                                 cachedgren!.text!.y(correctedPos!.Y)
-                                console.log("FLSAH OR HE")
-                                console.log(cachedgren!.grenade!)
                                 cachedgren!.status = "FLYING"
                             }
                         break;
@@ -350,16 +374,129 @@ function RedrawAtTicK(cache:PlayBackCache, tick:number){
                                 cachedgren!.status = "FLYING"
                             }
                         break;
+                        // case WeaponType.C4:
+                        //     const state = playback.grenade_pos.get(tickCorrection)!.get(id)
+                        //     console.log("HEEEERE   1")
+                        //     if (state == null) {
+                        //         console.log("HEEEERE")
+                        //         cachedgren!.bomb!.hide()
+                        //         cachedgren!.bomb!.hide()
+                        //         return
+                        //     }
+                        // break;
                     }
                 }
             } else {
-                console.log('Grenade needs to be created.')
+                let newGrenade = (id:string, vector:MapCoordinate, radius:number, grenade:string, status:string) : [Konva.Circle, Konva.Text, Konva.Group] => {
+                    const circle = new Konva.Circle({
+                        x: vector.X, y:vector.Y, radius: radius, fill: "white"
+                    })
+                    const label = new Konva.Text({
+                        x: vector.X+10, y:vector.Y-3, fontSize:10, fill: "white", text:grenade
+                    })
+                    const grenadeProp = new Konva.Group({name:`GRENADE ${grenade} ${status}`, id:id})
+                    grenadeProp.add(circle, label)
+                    return [circle, label, grenadeProp]
+
+                }
+                if (!PlaybackGroup) { 
+                    console.warn('RedrawAtTick: PlaybackGroup is null, cannot create objects') 
+                    return 
+                }
+                if (tick < el.flyingStart && el.grenadeType != WeaponType.C4) {
+                    return
+                }
+                switch (el.grenadeType){
+                        case WeaponType.Smokegrenade:
+                            if(tick >= el.flyingExpire! && tick <= el.bloomExpiry!){
+                                const state = playback.grenade_pos.get(el.bloomedStart!)!.get(id)
+                                const [circle, label, grenadeProp] = newGrenade(id, state!.vector, size * 0.035, "SMOKE", state!.status)
+                                let cache:EntityInfo = { kind: state!.grenade, status: state!.status, id: id, lastTickUpdate:tick, grenade: circle, text: label }
+                                GrenadeCache.set(id, cache)
+                                PlaybackGroup!.add(grenadeProp)
+                            }  else if (tick >= el.flyingStart && tick < el.flyingExpire){
+                                const state = playback.grenade_pos.get(el.flyingStart)!.get(id)
+                                const [circle, label, grenadeProp] = newGrenade(id, state!.vector, size * 0.01, "SMOKE", state!.status)
+                                let cache:EntityInfo = { kind: state!.grenade, status: state!.status, id: id, lastTickUpdate:el.flyingStart, grenade: circle, text: label }
+                                GrenadeCache.set(id, cache)
+                                PlaybackGroup!.add(grenadeProp)
+                            }
+                        break;
+                        case WeaponType.Incgrenade:
+                        case WeaponType.Molotov:
+                        case WeaponType.Hegrenade:
+                        case WeaponType.Flashbang:
+                            if (tick > el.flyingStart && tick < el.flyingExpire){
+                                let grenade = ""
+                                if (el.grenadeType == WeaponType.Hegrenade){
+                                    grenade = "HE"
+                                } else if (el.grenadeType == WeaponType.Flashbang) {
+                                    grenade = "Flash"
+                                } else {
+                                    grenade = "FIRE"
+                                }
+                                const state = playback.grenade_pos.get(el.flyingStart)!.get(id)
+                                const [circle, label, grenadeProp] = newGrenade(id, state!.vector, size * 0.01, grenade, state!.status)
+                                let cache:EntityInfo = { kind: state!.grenade, status: state!.status, id: id, lastTickUpdate:el.flyingStart, grenade: circle, text: label }
+                                GrenadeCache.set(id, cache)
+                                PlaybackGroup!.add(grenadeProp)
+                            }
+                        break;
+                        case WeaponType.C4:
+                            console.log("HEEEERE 3 ")
+                            let tickCorrection = tick
+                            while (!playback.grenade_pos.has(tickCorrection)){
+                                tickCorrection -= 1
+                                if (tickCorrection < el.flyingStart) {
+                                    break
+                                }
+                            }
+                            const state = playback.grenade_pos.get(tickCorrection)!.get("-1")
+                            if (state == null) {
+                                console.log("HEEEERE 2")
+                                return
+                            }
+                            console.log(state)
+                            let bomb = new Konva.Group({name:`BOMB ${state.status}`, id:"-1"})
+                            const bombSvg = WeaponImageCache.get(type_to_svg(404))
+                            let rect = new Konva.Image({
+                                    filters:[Konva.Filters.HSV],  image:bombSvg, x: state.vector.X-25/2, y: state.vector.Y-25/2, width:25, height:25,
+                            })
+                            rect.cache()
+                            let cache:EntityInfo = {
+                                kind: WeaponType.C4, status: state.status, id: id, lastTickUpdate:tickCorrection, bomb:rect
+                            }
+                            GrenadeCache.set(id, cache)
+                            switch (state.status) {
+                                case "DROPPED":
+                                    bomb.add(rect)
+                                    rect.stroke("WHITE")
+                                    rect.clearCache()
+                                    rect.cache()
+                                    PlaybackGroup.add(bomb)
+                                break;
+                                case "PLANTED":
+                                    rect.hue(70)
+                                    rect.saturation(100)
+                                    rect.value(255)
+                                    rect.clearCache()
+                                    rect.cache()
+                                    bomb.add(rect)
+                                    PlaybackGroup.add(bomb)
+                                break;
+                                default:
+                                    console.log(`${state.grenade} ${state.status} has not been handled yet.`)
+                                return;
+                            }
+                        break;
+                    }
+                
             }
         })
         FireLife.forEach((fl, id) => {
             if (FireCache.has(id)){
                 const fireEnt = FireCache.get(id)
-                console.log(`Fireent ${id} has already been created at ${tick} ${fl.spreadStart}`)
+                // console.log(`Fireent ${id} has already been created at ${tick} ${fl.spreadStart}`)
                 if (fireEnt) {
                     if (tick < fl.spreadStart) {
                         fireEnt.circle!.hide()
@@ -385,6 +522,44 @@ function RedrawAtTicK(cache:PlayBackCache, tick:number){
                         fireEnt.vertices = fl.verticesEnd!.length
                         fireEnt.spread!.setAttr("customVertices", fl.verticesEnd!)
                     }
+                }
+            } else {
+                if (!PlaybackGroup) { 
+                    console.warn('RedrawAtTick: PlaybackGroup is null, cannot create objects') 
+                    return 
+                }
+                if (tick > fl.spreadStart && tick < fl.spreadEnd!){
+                    
+                    const state = playback.fire_vertices.get(fl.spreadStart)!.get(id)!
+                    let fire = new Konva.Group({name:`FIRE ${state.status}`})
+                    let circl = new Konva.Circle({
+                        x : state.vertices[0].X , y: state.vertices[0].Y, radius: size * .01, fill:"orange"
+                    })
+                    const spread:Konva.Shape = new Konva.Shape({
+                        fill:"orange",
+                        customVertices: state.vertices,
+                        sceneFunc(con, shape) {
+                            con.beginPath()
+                            const vertes = shape.getAttr('customVertices')
+                            vertes.forEach((vertex:MapCoordinate, i:number) => {
+                                if (i == 0){
+                                    con.moveTo(vertex.X, vertex.Y)
+                                    
+                                } else {
+                                    con.lineTo(vertex.X, vertex.Y)
+                                }
+                            })
+                            con.closePath()
+                            con.fillStrokeShape(shape)
+                        },
+                    })
+                    fire.add(circl, spread)
+                    const fireEnt: FireEntity = {
+                        circle: circl, state: "SPREADING", vertices: fl.vericesStart.length, spread:spread, 
+                    }
+                    circl.hide()
+                    FireCache.set(id, fireEnt)
+                    PlaybackGroup!.add(fire)
                 }
             }
         })
@@ -428,6 +603,9 @@ function RedrawAtTicK(cache:PlayBackCache, tick:number){
             }
             
         })
+    } else {
+        console.warn('RedrawAtTick: playback is null, returning early')
+        return
     }
 }
 function DemoPlayback({file, map}:{file:String, map:String}){
@@ -464,6 +642,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
         const playbackRef = useRef<PlayBackRef>(null);
         const videoPlaybackLayer = useRef<Konva.Layer>(null)
         const hudLayerRef = useRef<Konva.Layer>(null);
+        const videoGroup = useRef<Konva.Group>(null);
         useEffect(( ) => {
             let ignore = false;
             async function getStats(){
@@ -815,7 +994,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                             if (state.status == "ENDING") {return}
                             let fire = new Konva.Group({name:`FIRE ${state.status}`})
                             let circl = new Konva.Circle({
-                                x : state.vertices[0].X , y: state.vertices[0].Y, radius: size.height * .02, fill:"orange"
+                                x : state.vertices[0].X , y: state.vertices[0].Y, radius: size.height * .01, fill:"orange"
                             })
                             const mainGroup = videoPlaybackLayer.current!.findOne("#mainPlayer") as Konva.Group
                             fire.add(circl)
@@ -966,9 +1145,8 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                 player_info: new Map<string, PlayerInformation>(),
                 round_timeline: new Map<number, RoundEvent>()
             };
-            if (grenadeLife.current == null){
-                grenadeLife.current = new Map();
-            }
+            grenadeLife.current = new Map();
+            fireLife.current = new Map();
             // Assume that each tick in PlayerState also exists in Grenade
             pos.forEach(([tick, playervec],i) => {
                 const info = Array.from(Object.entries(playervec))
@@ -1011,72 +1189,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                        } 
                        grenadeLife.current.set(grenid, ent)
                     //    PRELOADING GRENADES ONTO CANVAS
-                    //    const mainGroup = videoPlaybackLayer.current!.findOne("#mainPlayer") as Konva.Group
-                    //    if (grenstate.grenade == WeaponType.C4) {
-                    //         // console.log("BOMB NEEDS TO BE ADDED TO MAP")
-                    //         let bomb = new Konva.Group({name:`BOMB ${grenstate.status}`, id:grenid})
-                    //         let rect = new Konva.Image({
-                    //                 filters:[Konva.Filters.HSV],  image:bombSvg, x: grenstate.vector.X-25/2, y: grenstate.vector.Y-25/2, width:25, height:25,
-                    //         })
-                    //         rect.cache()
-                    //         let cache:EntityInfo = {
-                    //             kind: WeaponType.C4, status: grenstate.status, id: grenid, lastTickUpdate:tickRef.current, bomb:rect
-                    //         }
-                    //         grenadeCache.current.set(grenid, cache)
-                    //         switch (grenstate.status) {
-                    //             case "DROPPED":
-                    //                 bomb.add(rect)
-                    //                 rect.stroke("WHITE")
-                    //                 mainGroup.add(bomb)
-                    //             break;
-                    //             case "PLANTED":
-                    //                 rect.hue(70)
-                    //                 rect.saturation(100)
-                    //                 rect.value(255)
-                    //                 rect.clearCache()
-                    //                 rect.cache()
-                    //                 bomb.add(rect)
-                    //                 mainGroup.add(bomb)
-                    //             break;
-                    //             default:
-                    //                 console.log(`${grenstate.grenade} ${grenstate.status} has not been handled yet.`)
-                    //             return;
-                    //         }
-                                
-                    //     } else {
-                    //         let grenade = ""
-                    //         switch(grenstate.grenade){
-                    //             case WeaponType.Smokegrenade:
-                    //                 grenade = "SMOKE"
-                    //             break;
-                    //             case WeaponType.Hegrenade:
-                    //                 grenade = "HE"
-                    //             break;
-                    //             case WeaponType.Flashbang:
-                    //                 grenade = "Flash"
-                    //             break;
-                    //             case WeaponType.Incgrenade:
-                    //                 grenade = "Incendiary"
-                    //             break;
-                    //             case WeaponType.Molotov:
-                    //                 grenade = "Molly"
-                    //             break;
-                    //         }
-                    //         let gren = new Konva.Group({name:`GRENADE ${grenade} ${grenstate.status}`, id:grenid})
-                    //         let circl = new Konva.Circle({
-                    //                 x: grenstate.vector.X, y: grenstate.vector.Y, radius: size.width * .01 , fill:"white", visible:false
-                    //             })
-                    //         let label = new Konva.Text({
-                    //                 x: grenstate.vector.X + 5, y: grenstate.vector.Y - 3, text: grenade,
-                    //                 fill:"white" , fontSize:10, visible: false
-                    //         })
-                    //         let cache:EntityInfo = {
-                    //             kind: grenstate.grenade, status: grenstate.status, id: grenid, lastTickUpdate:Number(tick), grenade: circl, text: label
-                    //         }
-                    //         grenadeCache.current.set(grenid, cache)
-                    //         gren.add(circl, label)
-                    //         mainGroup.add(gren)
-                    //     }
+
                     } else {
                         if (state.lastSavedState != grenstate.status){
                             switch(grenstate.status){
@@ -1179,6 +1292,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                 playback: playbackRef.current,
                 FireLife: fireLife.current,
                 WeaponImageCache: weaponImageCacheRef.current,
+                PlaybackGroup: videoGroup.current,
                 size: size.height
             }
             fullPlaybacRef.current = cache
@@ -1241,7 +1355,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
             <div id="playbackMap" ref={playbackContainer}>
                 <Stage  width={stageDim.width} height={stageDim.height}>
                     <Layer ref={videoPlaybackLayer}   >
-                        <Group x={freeSpace} id={"mainPlayer"}>
+                        <Group x={freeSpace} id={"mainPlayer"} ref={videoGroup}>
                             <URLImage src={`/overviews/${map}.jpg`} name="map"  width={size.width} height={stageDim.height}></URLImage>     
                        
                                 { isPlaying.ready && 

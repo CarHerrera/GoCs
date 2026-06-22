@@ -1,25 +1,23 @@
-import DemoTable from './demoTables.tsx'
-import AdvancedStats from './statInfo';
+import DemoTable from './components/demoTables.tsx'
+import AdvancedStats from './components/statInfo.tsx';
+import PlayerPage from './components/PlayerPage.tsx';
 import { useId } from 'react';
 import { BrowserRouter, Link, Routes, Route } from 'react-router-dom';
 import TestKonva from './testingKonva.tsx';
+import Login from './components/Login.tsx';
 function Home() {
   const fileId = useId();
   return <>
-  
-  <div>
-        <form>
-          <label htmlFor={fileId}>Select a File:</label>
-          <input type="file" accept=".dem" id={fileId}></input>
-          <input type="submit"></input>
-        </form>
-      </div>
       <div>
+        <Login></Login>
+      </div>
+      {/* <div>
         <h1>Or Check out these already parsed demos</h1>
         <Link to="/demoList"><button>Click Me!</button></Link>
-      </div>
+      </div> */}
   </>
 }
+
 function App() {
   
 
@@ -31,6 +29,8 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/demoList" element={<DemoTable />} />
           <Route path="/advancedStats" element={<AdvancedStats  />} />
+          <Route path="/accountHome" element={
+            <PlayerPage ></PlayerPage>}/>
           <Route path="/Test" element={<TestKonva  />} />
         </Routes>
     </BrowserRouter>

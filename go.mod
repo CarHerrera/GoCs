@@ -5,9 +5,11 @@ go 1.25.0
 require (
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/gofiber/fiber/v3 v3.2.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang/geo v0.0.0-20260302211937-87f5a40ea07a
 	github.com/joho/godotenv v1.5.1
 	github.com/markus-wa/demoinfocs-golang/v5 v5.2.0
+	golang.org/x/crypto v0.53.0
 )
 
 require (
@@ -31,10 +33,9 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.70.0 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
-	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )

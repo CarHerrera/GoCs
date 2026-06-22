@@ -1,6 +1,6 @@
 import { useSearchParams } from "react-router-dom";
 import { useState, useEffect } from 'react';
-import './css/stats.css'
+import '../css/stats.css'
 import DemoPlayback from "./DemoPlayback";
 interface Stats{
     ID: number,

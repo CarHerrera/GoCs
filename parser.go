@@ -312,14 +312,7 @@ func Parse2D(filename string) MatchEvents {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// Process grenades first (they have no dependencies)
-		for batch := range grenadeBatch {
-			grenadeFlush(DB, batch)
-		}
-		// Then process fire (depends on grenades being in DB)
-		for batch := range fireBatch {
-			fireFlush(DB, batch)
-		}
+
 		// Process positions and events concurrently (no dependencies)
 		openChannels := 2
 		for openChannels > 0 {
@@ -337,6 +330,12 @@ func Parse2D(filename string) MatchEvents {
 					eventFlush(DB, batch)
 				}
 			}
+		}
+		for batch := range grenadeBatch {
+			grenadeFlush(DB, batch)
+		}
+		for batch := range fireBatch {
+			fireFlush(DB, batch)
 		}
 	}()
 	var playback MatchEvents

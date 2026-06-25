@@ -5,6 +5,7 @@ import { useId } from 'react';
 import { BrowserRouter, Link, Routes, Route } from 'react-router-dom';
 import TestKonva from './testingKonva.tsx';
 import Login from './components/Login.tsx';
+import TeamStatsDashboard from './components/TeamPage.tsx';
 function Home() {
   const fileId = useId();
   return <>
@@ -32,6 +33,7 @@ function App() {
           <Route path="/accountHome" element={
             <PlayerPage ></PlayerPage>}/>
           <Route path="/Test" element={<TestKonva  />} />
+          <Route path="/Team" element={<TeamStatsDashboard></TeamStatsDashboard>}></Route>
         </Routes>
     </BrowserRouter>
       

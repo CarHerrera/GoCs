@@ -62,7 +62,6 @@ function MatchRow({ match }: { match: Match }) {
   const navigate = useNavigate();
   return (
     <div className={styles.matchRow} onClick={()=> {
-      console.log('CLICKED')
       navigate(`/advancedStats?file=${match.file_name}&map=${match.map}`)
     }}>
       <span className={`${styles.matchResult} ${styles[match.result]}`}>
@@ -157,8 +156,8 @@ function NoMatchesState({ username }: { username: string }) {
     <>
       <nav className={styles.nav}>
         <div className={styles.navLinks}>
-          <a href="#">Home</a>
-          <a href="#">Matches</a>
+          <a href="accountHome">Home</a>
+          <a href="demoList">Matches</a>
           <a href="#">StratLab</a>
           <a href="#">Logout</a>
         </div>
@@ -315,7 +314,7 @@ export default function PlayerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
-
+  const navigate = useNavigate();
   useEffect(() => {
     fetch('http://localhost:4000/api/player/me', { credentials: 'include' })
       .then(res => {
@@ -376,8 +375,8 @@ export default function PlayerPage() {
 
       <nav className={styles.nav}>
         <div className={styles.navLinks}>
-          <a href="#">Home</a>
-          <a href="#">Matches</a>
+          <a href="/accountHome">Home</a>
+          <a href="/demoList">Matches</a>
           <a href="#">StratLab</a>
           <a href="#">Logout</a>
         </div>
@@ -430,7 +429,9 @@ export default function PlayerPage() {
 
         {/* Team Notes */}
         <div className={styles.teamSection}>
-          <div className={styles.teamSectionHeader}>
+          <div className={styles.teamSectionHeader} onClick={() => {
+            navigate('/Team')
+          }}>
             <div className={styles.teamName}>
               <div className={styles.teamBadge}>
                 {data.teamName?.slice(0, 2).toUpperCase() ?? '??'}

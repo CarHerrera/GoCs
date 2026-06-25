@@ -206,7 +206,7 @@ func main() {
 				query = `SELECT p.PLAYERID, p.PLAYERNAME, pe.HP, pe.ACTIVE_WEAPON, pe.HAS_BOMB, pe.P_ACTION,
 							pe.KILLS, pe.ASSISTS, pe.DEATHS, pe.ARMOR, pe.DINERO,
 							pe.PRIMARY_SLOT, pe.SECONDARY_SLOT, pe.SMOKE_SLOT, pe.FIRE_SLOT, pe.HE_SLOT, pe.DECOY_SLOT, 
-							pe.FLASH_SLOT1, pe.FLASH_SLOT2, pe.FLASHED_DURATION,
+							pe.FLASH_SLOT1, pe.FLASH_SLOT2, pe.FLASHED_DURATION, pe.VIEW_ANGLE,
 							pe.XPOS, pe.YPOS, pe.ZPOS, pe.TICK, rp.SIDE
 					from PLAYER_EVENTS as pe 
 					JOIN PLAYERS p on p.PLAYERID = pe.PLAYERID 
@@ -230,8 +230,9 @@ func main() {
 					var action PlayerAction
 					var x, y, z, flashedDur float64
 					var playerid int64
+					var view_angle float32
 					rows.Scan(&playerid, &Name, &hp, &weapon, &hasBomb, &action, &kills, &assist, &deaths, &armor,
-						&dinero, &primary, &secondary, &smoke, &fire, &he, &decoy, &flash1, &flash2, &flashedDur,
+						&dinero, &primary, &secondary, &smoke, &fire, &he, &decoy, &flash1, &flash2, &flashedDur, &view_angle,
 						&x, &y, &z, &tick, &side)
 					position := r3.Vector{X: x, Y: y, Z: z}
 					if _, ok := R.PlayerNames[playerid]; !ok {
@@ -247,7 +248,7 @@ func main() {
 						Armor: armor, Money: dinero, HasBomb: hasBomb,
 						Action: action, Primary: primary, Secondary: secondary, SmokeSlot: smoke,
 						FireSlot: fire, HESlot: he, DecoySlot: decoy, Flashslot1: flash1, FlashSlot2: flash2,
-						BlindDuration: flashedDur,
+						BlindDuration: flashedDur, ViewAngle: view_angle,
 					}
 
 					defer rows.Close()

@@ -10,6 +10,8 @@ html, body, #root {
 }
 .header {
     flex-shrink: 0; /* Prevents header from being squashed */
+    display: flex;
+    flex-direction: column;
 }
 
 .header h1 {

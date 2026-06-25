@@ -960,7 +960,6 @@ func get_pos_entry(player *common.Player, tick int, round int, matchid int, acti
 		}
 		switch wep.Class() {
 		case common.EqClassRifle, common.EqClassHeavy, common.EqClassSMG:
-			// Note: Cleaned up your duplicate EqClassRifle check here too!
 			primary = wep.Type
 		case common.EqClassPistols:
 			secondary = wep.Type
@@ -971,10 +970,11 @@ func get_pos_entry(player *common.Player, tick int, round int, matchid int, acti
 			case common.EqHE:
 				hegren = wep.Type
 			case common.EqFlash:
-				if flash1 == common.EqUnknown {
+				if player.FlashbangCount() == 2 {
 					flash1 = wep.Type
-				} else {
 					flash2 = wep.Type
+				} else if player.FlashbangCount() == 1 {
+					flash1 = wep.Type
 				}
 			case common.EqIncendiary:
 			case common.EqMolotov:
@@ -996,7 +996,7 @@ func get_pos_entry(player *common.Player, tick int, round int, matchid int, acti
 		matchid, round, tick, int(player.GetTeam()), player.SteamID64, player.Health(), player.Kills(),
 		player.Assists(), player.Deaths(), player.Armor(), player.Money(), int(primary), int(secondary),
 		int(smoke), int(hegren), int(flash1), int(flash2), int(fire), int(decoy), hasBomb, pos.X, pos.Y, pos.Z,
-		player.FlashDurationTimeRemaining().Seconds(), activeWep, action,
+		player.FlashDurationTimeRemaining().Seconds(), activeWep, action, player.ViewDirectionX(),
 	}
 	pS := PlayerState{
 		Position: player.Position(), Active_Weapon: activeWep, HP: player.Health(),
@@ -1004,7 +1004,7 @@ func get_pos_entry(player *common.Player, tick int, round int, matchid int, acti
 		Primary: int(primary), Secondary: int(secondary), SmokeSlot: int(smoke), HESlot: int(hegren),
 		Flashslot1: int(flash1), FlashSlot2: int(flash2), DecoySlot: int(decoy), FireSlot: int(fire),
 		Armor: player.Armor(), Money: player.Money(), Action: action, HasBomb: hasBomb,
-		BlindDuration: player.FlashDurationTimeRemaining().Seconds(),
+		BlindDuration: player.FlashDurationTimeRemaining().Seconds(), ViewAngle: player.ViewDirectionX(),
 	}
 	return pE, pS
 }
@@ -1058,8 +1058,8 @@ func flushToDB(db *sql.DB, entries []posEntry) {
 
 	stmt, err := tx.Prepare("INSERT INTO PLAYER_EVENTS" +
 		"(MATCHID, ROUND_NO, PLAYERID, HP, ACTIVE_WEAPON, HAS_BOMB, KILLS, ASSISTS, DEATHS, ARMOR, DINERO, P_ACTION," +
-		"PRIMARY_SLOT,SECONDARY_SLOT,SMOKE_SLOT,FIRE_SLOT,HE_SLOT,DECOY_SLOT,FLASH_SLOT1,FLASH_SLOT2,FLASHED_DURATION,XPOS,YPOS,ZPOS,TICK) VALUES" +
-		"(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)" +
+		"PRIMARY_SLOT,SECONDARY_SLOT,SMOKE_SLOT,FIRE_SLOT,HE_SLOT,DECOY_SLOT,FLASH_SLOT1,FLASH_SLOT2,FLASHED_DURATION,VIEW_ANGLE,XPOS,YPOS,ZPOS,TICK) VALUES" +
+		"(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)" +
 		"ON DUPLICATE KEY UPDATE ACTIVE_WEAPON=(ACTIVE_WEAPON), XPOS=VALUES(XPOS), YPOS=VALUES(YPOS), ZPOS=VALUES(ZPOS)")
 	if err != nil {
 		panic(err)
@@ -1069,7 +1069,7 @@ func flushToDB(db *sql.DB, entries []posEntry) {
 	for _, e := range entries {
 		// fmt.Printf("MID:%v, ROUND_NO:%v, STEAM:%v, WEAPON:%v, X:%v, Y:%v, Z:%v, TICK:%v\n", e.matchID, e.roundNo, e.steamID, e.weapon, e.x, e.y, e.z, e.tick)
 		if _, err := stmt.Exec(e.matchID, e.roundNo, e.steamID, e.hp, e.weapon, e.hasBomb, e.kills, e.assists, e.deaths, e.armor, e.money, e.action,
-			e.primary, e.seconday, e.smoke, e.fire, e.he, e.decoy, e.flash1, e.flash2, e.flashDur, e.x, e.y, e.z, e.tick); err != nil {
+			e.primary, e.seconday, e.smoke, e.fire, e.he, e.decoy, e.flash1, e.flash2, e.flashDur, e.view, e.x, e.y, e.z, e.tick); err != nil {
 			tx.Rollback()
 			panic(err)
 		}

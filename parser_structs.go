@@ -84,6 +84,17 @@ type Team struct {
 	PlayingPlayers map[string]Player `json:"Playing"`
 	inited         bool
 }
+type posEntry struct {
+	matchID, roundNo, tick, side                              int
+	steamID                                                   uint64
+	hp, kills, assists, deaths, armor, money                  int
+	primary, seconday, smoke, he, flash1, flash2, fire, decoy int
+	hasBomb                                                   bool
+	x, y, z, flashDur                                         float64
+	weapon                                                    int
+	action                                                    PlayerAction
+	view                                                      float32
+}
 type PlayerState struct {
 	Position      r3.Vector    `json:"vector"`
 	Active_Weapon int          `json:"active_weapon"`
@@ -104,6 +115,7 @@ type PlayerState struct {
 	Action        PlayerAction `json:"action"`
 	HasBomb       bool         `json:"hasBomb"`
 	BlindDuration float64      `json:"blind_dur"`
+	ViewAngle     float32      `json:"view_angle,float"`
 }
 type PlayerAction int
 
@@ -138,16 +150,6 @@ type base_event struct {
 	matchid, roundNo, tick int
 	event                  int
 	steamid1, steamid2     int64
-}
-type posEntry struct {
-	matchID, roundNo, tick, side                              int
-	steamID                                                   uint64
-	hp, kills, assists, deaths, armor, money                  int
-	primary, seconday, smoke, he, flash1, flash2, fire, decoy int
-	hasBomb                                                   bool
-	x, y, z, flashDur                                         float64
-	weapon                                                    int
-	action                                                    PlayerAction
 }
 
 type GrenadeEntry struct {

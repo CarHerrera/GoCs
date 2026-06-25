@@ -1,0 +1,720 @@
+/* ============================================================================
+   GLOBAL STYLES
+   ============================================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+.dashboard {
+  background: radial-gradient(120% 80% at 50% 0%, #16161f 0%, #0b0b12 55%, #08080e 100%);
+  padding: 24px 24px 64px;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #ECECF1;
+}
+
+.dashboard-container {
+  max-width: 1160px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* ============================================================================
+   NAVIGATION
+   ============================================================================ */
+
+.nav {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 40px;
+}
+
+.nav-bar {
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 30px;
+  padding: 11px 26px;
+  display: flex;
+  gap: 28px;
+}
+
+.nav-button {
+  background: none;
+  border: none;
+  color: #c7c7d2;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 3px 0;
+  font-family: inherit;
+  transition: color 0.2s;
+}
+
+.nav-button:hover {
+  color: #ffffff;
+}
+
+/* ============================================================================
+   HEADER / TEAM INFO
+   ============================================================================ */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.header-logo {
+  width: 60px;
+  height: 60px;
+  flex: none;
+  border-radius: 16px;
+  background-color: rgba(59, 130, 246, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3b82f6;
+  font-weight: 700;
+  font-size: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.header-info h1 {
+  margin: 0 0 12px 0;
+  font-size: 28px;
+  font-weight: 700;
+  font-family: 'Sora', sans-serif;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.header-info-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.header-info-text {
+  font-size: 14px;
+  color: #7a7a88;
+}
+
+.header-divider {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background-color: #4a4a58;
+}
+
+.header-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #6E6E80;
+}
+
+/* ============================================================================
+   TABS
+   ============================================================================ */
+
+.tabs-container {
+  display: flex;
+  gap: 8px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 5px;
+  width: max-content;
+}
+
+.tab-button {
+  padding: 9px 22px;
+  border: none;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  background-color: transparent;
+  color: #8a8a97;
+}
+
+.tab-button.active {
+  background-color: rgba(59, 130, 246, 0.16);
+  color: #3b82f6;
+}
+
+.tab-button:hover:not(.active) {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ============================================================================
+   STAT GRIDS & CARDS
+   ============================================================================ */
+
+.stat-grid-container {
+  background-color: #13131d;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 26px 12px;
+}
+
+.stat-grid-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6E6E80;
+  padding: 0 22px 18px;
+}
+
+.stat-grid {
+  display: flex;
+  gap: 0;
+}
+
+.stat-column {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  padding: 6px 8px;
+}
+
+.stat-column-value {
+  font-size: 34px;
+  font-weight: 700;
+  font-family: 'Sora', sans-serif;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.stat-column-value.highlight {
+  color: #3b82f6;
+}
+
+.stat-column-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #6E6E80;
+  margin-top: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ============================================================================
+   ROSTER TABLE
+   ============================================================================ */
+
+.roster-container {
+  background-color: #13131d;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 30px 34px;
+}
+
+.roster-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.roster-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6E6E80;
+}
+
+.roster-hint {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #4a4a58;
+  letter-spacing: 0.04em;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.roster-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.roster-table thead tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.roster-table th {
+  padding: 0 16px 14px;
+  text-align: left;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6E6E80;
+}
+
+.roster-table th:nth-child(n+2) {
+  text-align: center;
+}
+
+.roster-table th:nth-child(n+5) {
+  text-align: right;
+}
+
+.roster-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.roster-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.roster-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.roster-table td:nth-child(n+2) {
+  text-align: center;
+}
+
+.roster-table td:nth-child(n+5) {
+  text-align: right;
+}
+
+.player-cell {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.player-avatar {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 9px;
+  background-color: rgba(59, 130, 246, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3b82f6;
+  font-weight: 700;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.player-info-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #ECECF1;
+}
+
+.player-info-role {
+  font-size: 11px;
+  color: #6E6E80;
+  margin-top: 1px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.cell-matches {
+  color: #9a9aa8;
+  font-family: 'Sora', sans-serif;
+}
+
+.cell-kills {
+  color: #ECECF1;
+  font-weight: 600;
+  font-family: 'Sora', sans-serif;
+}
+
+.cell-deaths {
+  color: #9a9aa8;
+  font-family: 'Sora', sans-serif;
+}
+
+.cell-kd {
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.cell-kd-good {
+  color: #2ecc71;
+}
+
+.cell-kd-bad {
+  color: #e25563;
+}
+
+.cell-adr {
+  color: #9a9aa8;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.cell-hs {
+  color: #9a9aa8;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.cell-rating {
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.cell-rating-good {
+  color: #2ecc71;
+}
+
+.cell-rating-bad {
+  color: #e25563;
+}
+
+.cell-rating-neutral {
+  color: #ECECF1;
+}
+
+/* ============================================================================
+   RECENT MATCHES
+   ============================================================================ */
+
+.matches-container {
+  background-color: #13131d;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 30px 34px;
+}
+
+.matches-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6E6E80;
+  margin-bottom: 20px;
+}
+
+.matches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.match-item {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+
+.match-result {
+  width: 70px;
+  flex: none;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 7px;
+  padding: 6px 0;
+  border: 1px solid;
+}
+
+.match-result-win {
+  color: #2ecc71;
+  background-color: rgba(46, 204, 113, 0.12);
+  border-color: rgba(46, 204, 113, 0.3);
+}
+
+.match-result-loss {
+  color: #e25563;
+  background-color: rgba(226, 85, 99, 0.12);
+  border-color: rgba(226, 85, 99, 0.3);
+}
+
+.match-opponent {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #ECECF1;
+}
+
+.match-map {
+  width: 120px;
+  flex: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: #9a9aa8;
+}
+
+.match-top {
+  width: 180px;
+  flex: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #6E6E80;
+  text-align: right;
+}
+
+.match-top-name {
+  color: #ECECF1;
+  font-weight: 600;
+}
+
+/* ============================================================================
+   PLAYERS TAB - PLAYER SELECTION
+   ============================================================================ */
+
+.player-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.player-button {
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 9px 16px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.player-button.active {
+  background-color: rgba(59, 130, 246, 0.16);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.player-button-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ECECF1;
+}
+
+.player-button.active .player-button-name {
+  color: #3b82f6;
+}
+
+.player-button-role {
+  font-size: 10px;
+  color: #6E6E80;
+  margin-top: 1px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ============================================================================
+   PLAYERS TAB - SELECTED PLAYER
+   ============================================================================ */
+
+.selected-player-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.selected-player-avatar {
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border-radius: 14px;
+  background-color: rgba(59, 130, 246, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3b82f6;
+  font-weight: 700;
+  font-size: 17px;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.selected-player-info h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  font-family: 'Sora', sans-serif;
+  color: #ffffff;
+}
+
+.selected-player-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.active-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.16);
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+
+.selected-player-subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #6E6E80;
+  margin-top: 3px;
+}
+
+/* ============================================================================
+   ADVANCED TAB - MAPS TABLE
+   ============================================================================ */
+
+.maps-description {
+  margin: 0 0 22px 0;
+  color: #7a7a88;
+  font-size: 13px;
+}
+
+.maps-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.maps-table thead tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.maps-table th {
+  padding: 0 16px 14px;
+  text-align: left;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6E6E80;
+}
+
+.maps-table th:nth-child(n+2) {
+  text-align: right;
+}
+
+.maps-table tbody tr {
+  transition: background-color 0.15s;
+}
+
+.maps-table tbody tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.maps-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.maps-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.maps-table td:nth-child(n+2) {
+  text-align: right;
+}
+
+.map-name {
+  color: #ECECF1;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.map-rounds {
+  color: #9a9aa8;
+  font-family: 'Sora', sans-serif;
+}
+
+.map-winrate {
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.map-winrate-good {
+  color: #2ecc71;
+}
+
+.map-winrate-bad {
+  color: #e25563;
+}
+
+.map-winrate-neutral {
+  color: #ECECF1;
+}
+
+/* ============================================================================
+   RESPONSIVE
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .dashboard {
+    padding: 16px 16px 32px;
+  }
+
+  .dashboard-container {
+    gap: 16px;
+  }
+
+  .header {
+    flex-wrap: wrap;
+  }
+
+  .stat-grid-container {
+    padding: 20px 8px;
+  }
+
+  .roster-container,
+  .matches-container {
+    padding: 20px;
+  }
+
+  .match-item {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .match-map,
+  .match-top {
+    width: 100%;
+  }
+
+  .player-buttons {
+    gap: 6px;
+  }
+
+  .player-button {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .table-wrapper {
+    font-size: 12px;
+  }
+
+  .roster-table th,
+  .roster-table td {
+    padding: 10px 8px;
+  }
+}

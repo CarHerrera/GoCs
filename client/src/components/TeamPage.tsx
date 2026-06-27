@@ -1,10 +1,14 @@
-import React, { useState, useMemo, type ReactElement } from 'react';
+import React, { useState, useMemo, type ReactElement, useEffect } from 'react';
 import './TeamStatsDashboard.css';
 
 // ============================================================================
 // TYPES
 // ============================================================================
-
+interface Team {
+  wins: number
+  loss: number
+  players: Player[]
+}
 interface Player {
   name: string;
   role: string;
@@ -114,30 +118,68 @@ const getPercentColor = (value: number, highThreshold: number, lowThreshold: num
 const TeamStatsDashboard: React.FC = (): ReactElement => {
   const [tab, setTab] = useState<TabType>('Team');
   const [selectedPlayer, setSelectedPlayer] = useState<number>(0);
+  const [playerData, setPlayerData] = useState<Team | null> (null);
 
+  useEffect(() => {
+    fetch(`http://localhost:4000/api/player/team`, {credentials: 'include'})
+      .then(res => {
+          if (res.status === 401) {
+            // Not logged in — kick them back to login
+            window.location.href = '/';
+            return null;
+          }
+          if (!res.ok) throw new Error('Failed to load player data');
+          return res.json();
+        })
+      .then((d: Team | null) => {
+        if (!d) return;
+        setPlayerData(d)
+      })
+      .catch(err => {
+          console.error(err);
+      })
+  }, [])
+  console.log(playerData)
   // ========================================================================
   // DATA - Replace with API calls
   // ========================================================================
+  const players: Player[] = [ ];
+  const teamStats: StatColumn[] = [];
+  if (playerData){
+    let kills = 0
+    let deaths = 0
+    playerData.players.forEach((p) => {
+      players.push(p)
+      kills += p.kills
+      deaths += p.deaths
+    })
+    teamStats.push(createStatCol('Matches', playerData!.wins + playerData!.loss, 0,false))
+    teamStats.push(createStatCol('Wins', playerData!.wins, 1, false))
+    teamStats.push(createStatCol('Win %', Math.round((playerData!.wins / (playerData!.wins + playerData!.loss)) * 100)/100, 2, false))
+    teamStats.push(createStatCol('Team K / D', Math.round(kills/deaths * 100)/100, 3, true),)
+  } else {
+    players.push(
+      { name: 'AsO4-', role: 'AWP', matches: 70, kills: 1225, deaths: 1127, assists: 279, adr: 76.4, hs: 48, kast: 71, rating: 1.12, clutchWon: 38, clutchPct: 41, entryKills: 96, openingPct: 54, tradePct: 63, utilDmg: 8.4, current: true },
+      { name: 'v1go', role: 'IGL · Rifle', matches: 70, kills: 1080, deaths: 1090, assists: 360, adr: 71.2, hs: 52, kast: 73, rating: 1.02, clutchWon: 31, clutchPct: 37, entryKills: 64, openingPct: 48, tradePct: 66, utilDmg: 11.2, current: true },
+      { name: 'mYst', role: 'Entry', matches: 68, kills: 1190, deaths: 1160, assists: 240, adr: 78.9, hs: 56, kast: 69, rating: 1.08, clutchWon: 22, clutchPct: 33, entryKills: 188, openingPct: 58, tradePct: 60, utilDmg: 6.1, current: true },
+      { name: 'Karob', role: 'Support', matches: 70, kills: 940, deaths: 1050, assists: 410, adr: 66.5, hs: 45, kast: 74, rating: 0.96, clutchWon: 26, clutchPct: 35, entryKills: 52, openingPct: 44, tradePct: 70, utilDmg: 14.6, current: true },
+      { name: 'refrezh', role: 'Lurk', matches: 70, kills: 1100, deaths: 1010, assists: 280, adr: 75.3, hs: 51, kast: 72, rating: 1.10, clutchWon: 35, clutchPct: 39, entryKills: 78, openingPct: 50, tradePct: 65, utilDmg: 9.2, current: true },
+      { name: 'f0xx', role: 'Lurker', matches: 64, kills: 1110, deaths: 1020, assists: 270, adr: 74.1, hs: 50, kast: 70, rating: 1.10, clutchWon: 44, clutchPct: 46, entryKills: 71, openingPct: 51, tradePct: 58, utilDmg: 7.3, current: true },
+      { name: 'nyte', role: 'Rifle · Sub', matches: 22, kills: 360, deaths: 350, assists: 90, adr: 72.0, hs: 49, kast: 70, rating: 1.04, clutchWon: 9, clutchPct: 38, entryKills: 40, openingPct: 52, tradePct: 62, utilDmg: 8.0, current: false },
+      { name: 'zede', role: 'Rifle · Former', matches: 18, kills: 280, deaths: 300, assists: 70, adr: 68.4, hs: 47, kast: 68, rating: 0.95, clutchWon: 6, clutchPct: 31, entryKills: 33, openingPct: 47, tradePct: 61, utilDmg: 7.9, current: false },
+    )
+    teamStats.push(
+      createStatCol('Matches', '70', 0, false),
+      createStatCol('Wins', '34', 1, false),
+      createStatCol('Win %', '49%', 2, false),
+      createStatCol('Round Win %', '51%', 3, false),
+      createStatCol('Team K / D', '1.02', 4, true),
+      createStatCol('Pistol Win %', '53%', 5, false),
+    )
+  }
+  
 
-  const players: Player[] = [
-    { name: 'AsO4-', role: 'AWP', matches: 70, kills: 1225, deaths: 1127, assists: 279, adr: 76.4, hs: 48, kast: 71, rating: 1.12, clutchWon: 38, clutchPct: 41, entryKills: 96, openingPct: 54, tradePct: 63, utilDmg: 8.4, current: true },
-    { name: 'v1go', role: 'IGL · Rifle', matches: 70, kills: 1080, deaths: 1090, assists: 360, adr: 71.2, hs: 52, kast: 73, rating: 1.02, clutchWon: 31, clutchPct: 37, entryKills: 64, openingPct: 48, tradePct: 66, utilDmg: 11.2, current: true },
-    { name: 'mYst', role: 'Entry', matches: 68, kills: 1190, deaths: 1160, assists: 240, adr: 78.9, hs: 56, kast: 69, rating: 1.08, clutchWon: 22, clutchPct: 33, entryKills: 188, openingPct: 58, tradePct: 60, utilDmg: 6.1, current: true },
-    { name: 'Karob', role: 'Support', matches: 70, kills: 940, deaths: 1050, assists: 410, adr: 66.5, hs: 45, kast: 74, rating: 0.96, clutchWon: 26, clutchPct: 35, entryKills: 52, openingPct: 44, tradePct: 70, utilDmg: 14.6, current: true },
-    { name: 'refrezh', role: 'Lurk', matches: 70, kills: 1100, deaths: 1010, assists: 280, adr: 75.3, hs: 51, kast: 72, rating: 1.10, clutchWon: 35, clutchPct: 39, entryKills: 78, openingPct: 50, tradePct: 65, utilDmg: 9.2, current: true },
-    { name: 'f0xx', role: 'Lurker', matches: 64, kills: 1110, deaths: 1020, assists: 270, adr: 74.1, hs: 50, kast: 70, rating: 1.10, clutchWon: 44, clutchPct: 46, entryKills: 71, openingPct: 51, tradePct: 58, utilDmg: 7.3, current: true },
-    { name: 'nyte', role: 'Rifle · Sub', matches: 22, kills: 360, deaths: 350, assists: 90, adr: 72.0, hs: 49, kast: 70, rating: 1.04, clutchWon: 9, clutchPct: 38, entryKills: 40, openingPct: 52, tradePct: 62, utilDmg: 8.0, current: false },
-    { name: 'zede', role: 'Rifle · Former', matches: 18, kills: 280, deaths: 300, assists: 70, adr: 68.4, hs: 47, kast: 68, rating: 0.95, clutchWon: 6, clutchPct: 31, entryKills: 33, openingPct: 47, tradePct: 61, utilDmg: 7.9, current: false },
-  ];
 
-  const teamStats: StatColumn[] = [
-    createStatCol('Matches', '70', 0, false),
-    createStatCol('Wins', '34', 1, false),
-    createStatCol('Win %', '49%', 2, false),
-    createStatCol('Round Win %', '51%', 3, false),
-    createStatCol('Team K / D', '1.02', 4, true),
-    createStatCol('Pistol Win %', '53%', 5, false),
-  ];
 
   const recentMatches: Match[] = [
     { result: 'W 13-8', win: true, opponent: 'Spectrum', map: 'de_ancient', topName: 'AsO4-', topLine: '24-14' },
@@ -172,7 +214,7 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
       ratingColor: p.rating >= 1.05 ? '#2ecc71' : (p.rating < 1 ? '#e25563' : '#ECECF1'),
       bg: getRowBg(idx),
     }));
-  }, [players]);
+  }, [playerData]);
 
   const playerIdx: number = Math.min(selectedPlayer, players.length - 1);
   const selectedPlayerData: Player = players[playerIdx];

@@ -32,17 +32,23 @@ func getPlayerPageData(db *sql.DB, accountID int64) (*PlayerPageData, error) {
 	data := &PlayerPageData{}
 
 	err := db.QueryRow(`
-        SELECT 
-            u.ACCOUNTID,
-            u.USERNAME,
-            u.STEAMID,
-            u.STEAM_VER,
-            p.PLAYERNAME,
-            p.TEAMNAME
-        FROM USER_ACCOUNTS u
-        LEFT JOIN PLAYERS p ON p.PLAYERID = u.STEAMID
-        WHERE u.ACCOUNTID = ?
-    `, accountID).Scan(
+		SELECT 
+			u.ACCOUNTID,
+			u.USERNAME,
+			u.STEAMID,
+			u.STEAM_VER,
+			p.PLAYERNAME,
+			ms.TEAMNAME
+		FROM USER_ACCOUNTS u
+		LEFT JOIN PLAYERS p ON p.PLAYERID = u.STEAMID
+		LEFT JOIN MATCH_STATS ms ON ms.PLAYERID = p.PLAYERID
+			AND ms.MATCHID = (
+				SELECT MATCHID FROM MATCH_STATS
+				WHERE PLAYERID = p.PLAYERID
+				ORDER BY MATCHID DESC LIMIT 1
+			)
+		WHERE u.ACCOUNTID = ?
+	`, accountID).Scan(
 		&data.AccountID,
 		&data.Username,
 		&data.SteamID, // sql.NullInt64 handles NULL safely
@@ -182,10 +188,10 @@ func main() {
 				// fmt.Print("HAS BEEN PARSED")
 				log.Printf("GETTING SQL RESULTS")
 				query := `
-				SELECT p.PLAYERNAME, p.PLAYERID, p.TEAMNAME as TEAM 
+				SELECT p.PLAYERNAME, p.PLAYERID, ms.TEAMNAME as TEAM 
 				FROM PLAYERS as p 
-				LEFT JOIN MATCHES m ON (p.TEAMNAME = m.TEAM_A_NAME OR m.TEAM_B_NAME = p.TEAMNAME) 
-				WHERE MATCHID = ? 
+				JOIN MATCH_STATS ms ON ms.PLAYERID = p.PLAYERID
+				WHERE ms.MATCHID = ? 
 				ORDER BY TEAM ASC`
 				team_response, err := DB.Query(query, matchid)
 				me.Teams = make(map[string]map[int64]string)
@@ -352,6 +358,7 @@ func main() {
 						"success": "false",
 					})
 				}
+				log.Printf("Succesfully parsed basic stats of %v", demo)
 				return c.Status(200).JSON(demo_stats.TeamStats)
 			} else {
 				log.Printf("Grabbing from SQL")
@@ -364,7 +371,7 @@ func main() {
 						m.TEAM_B_T_SCORE,
 						m.TEAM_B_CT_SCORE,
 						m.TEAM_B_FINAL_SCORE,
-						p.TEAMNAME,
+						ms.TEAMNAME,
 						p.PLAYERNAME,
 						p.PLAYERID,
 						ms.TOTAL_KILLS,
@@ -374,7 +381,7 @@ func main() {
 					JOIN MATCH_STATS ms ON m.MATCHID = ms.MATCHID
 					JOIN PLAYERS p ON ms.PLAYERID = p.PLAYERID
 					WHERE m.MATCHID = ?
-					ORDER BY p.TEAMNAME, ms.TOTAL_KILLS DESC`
+					ORDER BY ms.TEAMNAME, ms.TOTAL_KILLS DESC`
 				rows, err := DB.Query(query, row.ID)
 				if err != nil {
 					panic(err)
@@ -408,7 +415,7 @@ func main() {
 							stats[0].EndScore = A_FINAL_SCORE
 							stats[0].CTScore = A_CT_SCORE
 							stats[0].TScore = A_T_SCORE
-							stats[0].PlayingPlayers = make(map[string]Player)
+							stats[0].PlayingPlayers = make(map[int64]Player)
 						}
 
 						player := Player{
@@ -420,7 +427,7 @@ func main() {
 								Assists: assists,
 							},
 						}
-						stats[0].PlayingPlayers[playerName] = player
+						stats[0].PlayingPlayers[playerID] = player
 					} else {
 						if !stats[1].inited {
 							stats[1].ClanName = teamName
@@ -429,7 +436,7 @@ func main() {
 							stats[1].EndScore = B_FINAL_SCORE
 							stats[1].CTScore = B_CT_SCORE
 							stats[1].TScore = B_T_SCORE
-							stats[1].PlayingPlayers = make(map[string]Player)
+							stats[1].PlayingPlayers = make(map[int64]Player)
 						}
 						player := Player{
 							Name: playerName,
@@ -440,7 +447,7 @@ func main() {
 								Assists: assists,
 							},
 						}
-						stats[1].PlayingPlayers[playerName] = player
+						stats[1].PlayingPlayers[playerID] = player
 					}
 				}
 				defer rows.Close()
@@ -731,8 +738,8 @@ func main() {
 				ms.TOTAL_ASSISTS,
 				p.PLAYERNAME,
 				CASE 
-					WHEN p.TEAMNAME = m.TEAM_A_NAME THEN 'Team A'
-					WHEN p.TEAMNAME = m.TEAM_B_NAME THEN 'Team B'
+					WHEN ms.TEAMNAME = m.TEAM_A_NAME THEN 'Team A'
+        			WHEN ms.TEAMNAME = m.TEAM_B_NAME THEN 'Team B'
 					ELSE 'Unknown'
 				END AS PLAYER_TEAM
 			FROM MATCHES m
@@ -785,6 +792,86 @@ func main() {
 			response["teamName"] = data.TeamName.String
 		}
 		return c.JSON(response)
+	})
+	app.Get("/api/player/team", func(c fiber.Ctx) error {
+		accountID, err := getUserIDFromCookie(c)
+		if err != nil {
+			return c.Status(401).SendString("Unauthorized")
+		}
+		data, err := getPlayerPageData(DB, accountID)
+		if err != nil {
+			return c.Status(500).SendString("Failed to load player data")
+		}
+		query := `
+		SELECT 
+			p.PLAYERID,
+			p.PLAYERNAME,
+			SUM(ms.TOTAL_KILLS) AS KILLS,
+			SUM(ms.TOTAL_DEATHS) AS DEATHS,
+			SUM(ms.TOTAL_ASSISTS) AS ASSISTS,
+			COUNT(ms.MATCHID) AS MATCHES_PLAYED,
+			SUM(CASE 
+				WHEN ms.TEAMNAME = m.TEAM_A_NAME AND m.TEAM_A_FINAL_SCORE > m.TEAM_B_FINAL_SCORE THEN 1
+				WHEN ms.TEAMNAME = m.TEAM_B_NAME AND m.TEAM_B_FINAL_SCORE > m.TEAM_A_FINAL_SCORE THEN 1
+				ELSE 0
+			END) AS WINS,
+			SUM(CASE 
+				WHEN ms.TEAMNAME = m.TEAM_A_NAME AND m.TEAM_A_FINAL_SCORE < m.TEAM_B_FINAL_SCORE THEN 1
+				WHEN ms.TEAMNAME = m.TEAM_B_NAME AND m.TEAM_B_FINAL_SCORE < m.TEAM_A_FINAL_SCORE THEN 1
+				ELSE 0
+			END) AS LOSSES
+		FROM PLAYERS p
+		JOIN MATCH_STATS ms ON p.PLAYERID = ms.PLAYERID
+		JOIN MATCHES m ON ms.MATCHID = m.MATCHID
+		WHERE ms.TEAMNAME = ?
+		GROUP BY p.PLAYERID, p.PLAYERNAME, ms.TEAMNAME
+		ORDER BY KILLS DESC
+		`
+		max_wins := 0
+		max_loss := 0
+		team_players, err := DB.Query(query, data.TeamName.String)
+		roster := []fiber.Map{}
+		if err == nil {
+			for team_players.Next() {
+				var playerid int64
+				var name string
+				var kills, ass, deaths, app int
+				var wins, loss int
+				// player_matches.Scan(&filename, &gamemap, &teama, &teamb, &teama_score, &teamb_score, &k, &a, &d, &name, &team)
+				team_players.Scan(&playerid, &name, &kills, &deaths, &ass, &app, &wins, &loss)
+				if wins > max_wins {
+					max_wins = wins
+				}
+				if loss > max_loss {
+					max_loss = loss
+				}
+				roster = append(roster, fiber.Map{
+					"name":       name,
+					"kills":      kills,
+					"assists":    ass,
+					"deaths":     deaths,
+					"matches":    app,
+					"role":       "player",
+					"adr":        0,
+					"hs":         0,
+					"kast":       0,
+					"rating":     2.0,
+					"clutchWon":  2,
+					"clutchPct":  .5,
+					"entryKills": 0,
+					"openingPct": 0,
+					"tradePct":   0,
+					"utilDmg":    0,
+					"current":    true,
+				})
+			}
+		}
+		TeamResponse := fiber.Map{
+			"players": roster,
+			"wins":    max_wins,
+			"loss":    max_loss,
+		}
+		return c.JSON(TeamResponse)
 	})
 	app.Post("/auth/login", func(c fiber.Ctx) error {
 		var req AccountRegister

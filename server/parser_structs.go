@@ -76,12 +76,12 @@ type Player struct {
 	Stats PlayerStats `json:"stats"`
 }
 type Team struct {
-	ID             int               `json:"ID"`
-	ClanName       string            `json:"Clanname"`
-	EndScore       int               `json:"Endscore"`
-	TScore         int               `json:"TScore"`
-	CTScore        int               `json:"CTScore"`
-	PlayingPlayers map[string]Player `json:"Playing"`
+	ID             int              `json:"ID"`
+	ClanName       string           `json:"Clanname"`
+	EndScore       int              `json:"Endscore"`
+	TScore         int              `json:"TScore"`
+	CTScore        int              `json:"CTScore"`
+	PlayingPlayers map[int64]Player `json:"Playing"`
 	inited         bool
 }
 type posEntry struct {

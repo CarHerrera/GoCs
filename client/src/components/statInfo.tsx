@@ -50,8 +50,8 @@ function Overview ({stats}:{stats: Stats[]}){
                             </tr>
                         </thead>
                         <tbody>{  
-                                    Object.entries(stats[0]?.Playing).map(([name, player], i) => {
-                                    return <tr key ={i}><td>{name}</td><td>{player.stats.kills}</td><td>{player.stats.assists}</td><td>{player.stats.deaths}</td></tr>
+                                    Object.entries(stats[0]?.Playing).map(([, player], i) => {
+                                    return <tr key ={i}><td>{player.name}</td><td>{player.stats.kills}</td><td>{player.stats.assists}</td><td>{player.stats.deaths}</td></tr>
                                 })}</tbody>
                     </table>
                 </div>
@@ -67,8 +67,8 @@ function Overview ({stats}:{stats: Stats[]}){
                             </tr>
                         </thead>
                         <tbody>{   stats.length !=0 ?
-                                Object.entries(stats[1].Playing).map(([name, player], i) => {
-                                    return <tr key ={i}><td>{name}</td><td>{player.stats.kills}</td><td>{player.stats.assists}</td><td>{player.stats.deaths}</td></tr>
+                                Object.entries(stats[1].Playing).map(([, player], i) => {
+                                    return <tr key ={i}><td>{player.name}</td><td>{player.stats.kills}</td><td>{player.stats.assists}</td><td>{player.stats.deaths}</td></tr>
                                 }): ""
                             }</tbody>
                     </table>

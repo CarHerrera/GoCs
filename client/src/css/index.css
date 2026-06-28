@@ -34,7 +34,7 @@
   :root {
     --text: #9ca3af;
     --text-h: #f3f4f6;
-    --bg: radial-gradient(120% 80% at 50% 0%, #16161f 0%, #0b0b12 55%, #08080e 100%);
+    --bg: #08080e;
     --border: #2e303a;
     --code-bg: #1f2028;
     --accent: #c084fc;

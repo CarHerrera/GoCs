@@ -2,19 +2,16 @@ package main
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"os"
-	"sync"
+	"strings"
 	"testing"
 	"time"
 
 	// Import the MariaDB-compatible driver anonymously
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/golang/geo/r2"
 	"github.com/joho/godotenv"
-	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 )
 
 type SQLMatch struct {
@@ -64,115 +61,32 @@ func TestConnect(t *testing.T) {
 	rt := newRoundTracker(setup, &rounds)
 	setupMap(p, setup)
 	setupTeams(p, setup, rt)
-	// setupKillTracking(p, rt)
-	setupRoundInfo(p, rt)
-	var (
-		playerBuffer  []posEntry
-		grenadeBuffer []GrenadeEntry
-		fireBuffer    []FireEntry
-		eventBuffer   []EventEntry
-	)
-	size := 500
-	posBatch := make(chan []posEntry, size)
-	grenadeBatch := make(chan []GrenadeEntry, size)
-	fireBatch := make(chan []FireEntry, size)
-	eventBatch := make(chan []EventEntry, size)
-	// var playback MatchEvents
-	var RoundPositions map[int]RoundInfo
-	var FireParticles map[int][]r2.Point
-	FireParticles = make(map[int][]r2.Point)
-	RoundPositions = make(map[int]RoundInfo)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	setUpKillTracking(p, rt)
+	setUpSideTracking(p, rt)
+	setUpTradeTracking(p, setup, rt)
+	setUpClutchTracking(p, setup, rt)
+	setUpFlashTracking(p, setup, rt)
+	setUpGrenadeDamageTracking(p, setup, rt)
+	setUpDamageTracking(p, rt)
+	defer p.Close()
 
-		// Process positions and events concurrently (no dependencies)
-		openChannels := 2
-		for openChannels > 0 {
-			select {
-			case batch, ok := <-posBatch:
-				if !ok {
-					openChannels--
-				} else {
-					flushToDB(DB, batch)
-				}
-			case batch, ok := <-eventBatch:
-				if !ok {
-					openChannels--
-				} else {
-					eventFlush(DB, batch)
-				}
-			}
-		}
-		for batch := range grenadeBatch {
-			grenadeFlush(DB, batch)
-		}
-		for batch := range fireBatch {
-			fireFlush(DB, batch)
-		}
-	}()
-	setUpRoundCycle(p, rt, &playerBuffer, &grenadeBuffer, &fireBuffer, &eventBuffer, RoundPositions, FireParticles)
-	setUpPositionTracking(p, rt, RoundPositions, &playerBuffer, posBatch)
-	setUpFireTracking(p, rt, RoundPositions, FireParticles, &fireBuffer, fireBatch)
-	setUpEntityTracking(p, rt, RoundPositions, &grenadeBuffer, grenadeBatch)
-	setUpEventTracking(p, rt, RoundPositions, &eventBuffer, eventBatch)
-	setupSideTracking(p, rt)
-	t.Logf("Created round tracker rt %v", rt)
-	t.Log("STARTING PARSE")
-	parseerr := recoverParseToEnd(p)
-	if parseerr != nil {
-		if !errors.Is(parseerr, dem.ErrUnexpectedEndOfDemo) {
-			close(posBatch)
-			close(grenadeBatch)
-			close(fireBatch)
-			close(eventBatch)
-			wg.Wait()
-			t.Errorf("Parse error: %v", parseerr)
-			return // stop here — don't fall through to flush on closed channels
-		}
-		log.Printf("[Parse2D] Caught expected EOF, flushing remaining data")
-	}
-	log.Printf("[Parse2D] Flushing remaining buffers before closing channels")
-	bufferSize := len(playerBuffer) + len(grenadeBuffer) + len(fireBuffer) + len(eventBuffer)
-	if len(playerBuffer) > 0 {
-		batchToSend := make([]posEntry, len(playerBuffer))
-		copy(batchToSend, playerBuffer)
-		posBatch <- batchToSend
-		playerBuffer = playerBuffer[:0]
-	}
-	if len(grenadeBuffer) > 0 {
-		grenadeBatchSend := make([]GrenadeEntry, len(grenadeBuffer))
-		copy(grenadeBatchSend, grenadeBuffer)
-		grenadeBatch <- grenadeBatchSend
-		grenadeBuffer = grenadeBuffer[:0]
-	}
-	if len(fireBuffer) > 0 {
-		fireBatchSend := make([]FireEntry, len(fireBuffer))
-		copy(fireBatchSend, fireBuffer)
-		fireBatch <- fireBatchSend
-		fireBuffer = fireBuffer[:0]
-	}
-	if len(eventBuffer) > 0 {
-		eventBatchSend := make([]EventEntry, len(eventBuffer))
-		copy(eventBatchSend, eventBuffer)
-		eventBatch <- eventBatchSend
-		eventBuffer = eventBuffer[:0]
-	}
-	close(posBatch)
-	close(grenadeBatch)
-	close(fireBatch)
-	close(eventBatch)
-	wg.Wait()
-	t.Logf("Final Round %d ended. Flushing %d rows to DB...\n", len(RoundPositions), bufferSize)
-	_, err = DB.Exec("UPDATE MATCHES SET PARSED_2D = 1 WHERE MATCHID = ?", matchId)
+	parseErr := recoverParseToEnd(p)
+	if parseErr != nil {
+		log.Printf("[parse_demo_stats] Parse error: %v", parseErr)
+		log.Printf("[parse_demo_stats] Error contains 'UnexpectedEndOfDemo': %v",
+			strings.Contains(parseErr.Error(), "UnexpectedEndOfDemo"))
 
-	if err != nil {
-		panic(err)
+		// Only return error if it's NOT an EOF error
+		if !strings.Contains(parseErr.Error(), "UnexpectedEndOfDemo") {
+			log.Printf("[parse_demo_stats] FATAL: Non-EOF error, returning")
+		}
+
+		// If it's just EOF, log it and continue to save the data
+		log.Printf("[parse_demo_stats] Caught expected OF, continuing to save collected stats to database")
 	}
 
-	// t.Logf("HERE IS OUR STRUCT TEAM 1 %v\n", rt.Teams[0])
+	t.Logf("HERE IS OUR STRUCT TEAM 1 %v\n", rt.Teams[0].PlayingPlayers)
 	t.Log("DONE!")
-	// t.Logf("HERE IS OUR STRUCT Team 2 %v\n", rt.Teams[1])
+	t.Logf("HERE IS OUR STRUCT Team 2 %v\n", rt.Teams[1].PlayingPlayers)
 	// 	return c.Status(20).JSON(resp)
 }

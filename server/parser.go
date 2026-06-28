@@ -37,13 +37,17 @@ func parse_demo_stats(fileName string, MATCHID int) (BaseDemo, error) {
 	rt := newRoundTracker(setup, &rounds)
 	setupMap(p, setup)
 	setupTeams(p, setup, rt)
-	setupKillTracking(p, rt)
-	setupSideTracking(p, rt)
-	info, err := file.Stat()
-	var TeamStats [2]Team
-	defer p.Close()
-	var GameMap string
+	setupRoundInfo(p, rt)
 
+	setUpKillTracking(p, rt)
+	setUpTradeTracking(p, setup, rt)
+	setUpClutchTracking(p, setup, rt)
+	setUpFlashTracking(p, setup, rt)
+	setUpGrenadeDamageTracking(p, setup, rt)
+	setUpDamageTracking(p, rt)
+	setUpSideTracking(p, rt)
+	info, err := file.Stat()
+	defer p.Close()
 	parseErr := recoverParseToEnd(p)
 	if parseErr != nil {
 		log.Printf("[parse_demo_stats] Parse error: %v", parseErr)
@@ -71,14 +75,32 @@ func parse_demo_stats(fileName string, MATCHID int) (BaseDemo, error) {
 			WHERE 
 				MATCHID = ?
 	`, rt.Teams[0].ClanName, rt.Teams[0].TScore, rt.Teams[0].CTScore, rt.Teams[0].EndScore,
-		rt.Teams[1].ClanName, rt.Teams[1].TScore, rt.Teams[1].CTScore, rt.Teams[1].EndScore, GameMap, MATCHID)
+		rt.Teams[1].ClanName, rt.Teams[1].TScore, rt.Teams[1].CTScore, rt.Teams[1].EndScore, setup.GameMap, MATCHID)
 
 	if err != nil {
 		return BaseDemo{}, err
 	}
 	for i, team := range rt.Teams {
 		for _, player := range team.PlayingPlayers {
-			_, err := DB.Exec("INSERT INTO MATCH_STATS (MATCHID,PLAYERID,TOTAL_KILLS,TOTAL_DEATHS,TOTAL_ASSISTS,TEAMNAME) VALUES (?,?,?,?,?,?)", MATCHID, player.ID, player.Stats.Kills, player.Stats.Deaths, player.Stats.Assists, rt.Teams[i].ClanName)
+			_, err := DB.Exec(`INSERT INTO MATCH_STATS 
+    (MATCHID, PLAYERID, TEAMNAME,
+     TOTAL_KILLS, TOTAL_DEATHS, TOTAL_ASSISTS, TOTAL_DAMAGE,
+     HEADSHOTS, ENTRY_KILLS, ENTRY_DEATHS,
+     UTILITY_DAMAGE, HE_DAMAGE, FIRE_DAMAGE,
+     ONE_KILL_COUNT, TWO_KILL_COUNT, THREE_KILL_COUNT, FOUR_KILL_COUNT, FIVE_KILL_COUNT,
+     TRADED_KILLS, TRADED_DEATHS,
+     CLUTCHES_WON, CLUTCHES_COUNT,
+     FLASH_ASSISTS, TEAM_FLASHES, ENEMIES_FLASHED)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				MATCHID, player.ID, rt.Teams[i].ClanName,
+				player.Stats.Kills, player.Stats.Deaths, player.Stats.Assists, player.Stats.Damage,
+				player.Stats.HeadshotKills, player.Stats.EntryKills, player.Stats.EntryDeaths,
+				player.Stats.HEDamage+player.Stats.FireDamage, player.Stats.HEDamage, player.Stats.FireDamage,
+				player.Stats.OneFragCount, player.Stats.TwoFrags, player.Stats.ThreeFrags, player.Stats.FourFrags, player.Stats.FiveFrags,
+				player.Stats.TradeKills, player.Stats.TradedDeaths,
+				player.Stats.ClutchesWon, player.Stats.ClutchCount,
+				player.Stats.FlashAssists, player.Stats.TeamFlashed, player.Stats.EnemiesFlashed,
+			)
 			if err != nil {
 				return BaseDemo{}, err
 			}
@@ -93,30 +115,30 @@ func parse_demo_stats(fileName string, MATCHID int) (BaseDemo, error) {
 		FileSize:  fmt.Sprintf("%.2f", float64(info.Size())/1024.0/1024.0*1.00),
 		BaseStats: true,
 		Parsed:    false,
-		Map:       GameMap,
-		TeamStats: TeamStats,
+		Map:       setup.GameMap,
+		TeamStats: *rt.Teams,
 	}
 	return infoSend, nil
 }
 
 func Parse2D(filename string) MatchEvents {
+
+	var matchid int
+	var matchmap string
+	if err := DB.QueryRow("SELECT MATCHID, MAP FROM MATCHES WHERE DEMO_NAME = ?", filename).Scan(&matchid, &matchmap); err != nil {
+		panic(err)
+	}
 	file, p, err := setupDemoFile(filename)
 	if err != nil {
 		panic(err)
 	}
 	defer p.Close()
 	defer file.Close()
-	var matchid int
-	var matchmap string
-	if err := DB.QueryRow("SELECT MATCHID, MAP FROM MATCHES WHERE DEMO_NAME = ?", filename).Scan(&matchid, &matchmap); err != nil {
-		panic(err)
-	}
 	setup := &DemoSetup{MatchId: matchid}
 	rounds := 0
 	rt := newRoundTracker(setup, &rounds)
 	setupMap(p, setup)
 	setupTeams(p, setup, rt)
-	// setupKillTracking(p, rt)
 	setupRoundInfo(p, rt)
 	const size = 500
 	var playerBuffer []posEntry
@@ -160,12 +182,14 @@ func Parse2D(filename string) MatchEvents {
 	var playback MatchEvents
 	var RoundPositions map[int]RoundInfo
 	var FireParticles map[int][]r2.Point
+	RoundPositions = make(map[int]RoundInfo)
+	FireParticles = make(map[int][]r2.Point)
 	setUpRoundCycle(p, rt, &playerBuffer, &grenadeBuffer, &fireBuffer, &eventBuffer, RoundPositions, FireParticles)
 	setUpPositionTracking(p, rt, RoundPositions, &playerBuffer, posBatch)
 	setUpFireTracking(p, rt, RoundPositions, FireParticles, &fireBuffer, fireBatch)
 	setUpEntityTracking(p, rt, RoundPositions, &grenadeBuffer, grenadeBatch)
 	setUpEventTracking(p, rt, RoundPositions, &eventBuffer, eventBatch)
-	setupSideTracking(p, rt)
+	setUpSideTracking(p, rt)
 	log.Printf("STARTING PARSE")
 
 	parseerr := recoverParseToEnd(p)

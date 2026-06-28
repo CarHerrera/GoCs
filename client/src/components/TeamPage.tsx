@@ -8,6 +8,10 @@ interface Team {
   wins: number
   loss: number
   players: Player[]
+  pistolpct: number;
+  ecopct: number; 
+  fullpct: number;
+  forcepct: number;
 }
 interface Player {
   name: string;
@@ -15,6 +19,7 @@ interface Player {
   matches: number;
   kills: number;
   deaths: number;
+  dmg: number;
   assists: number;
   adr: number;
   hs: number;
@@ -23,6 +28,11 @@ interface Player {
   clutchWon: number;
   clutchPct: number;
   entryKills: number;
+  onek: number;
+  twok: number;
+  threek: number;
+  fourk: number;
+  ace: number;
   openingPct: number;
   tradePct: number;
   utilDmg: number;
@@ -145,6 +155,7 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
   // ========================================================================
   const players: Player[] = [ ];
   const teamStats: StatColumn[] = [];
+  
   if (playerData){
     let kills = 0
     let deaths = 0
@@ -159,14 +170,14 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
     teamStats.push(createStatCol('Team K / D', Math.round(kills/deaths * 100)/100, 3, true),)
   } else {
     players.push(
-      { name: 'AsO4-', role: 'AWP', matches: 70, kills: 1225, deaths: 1127, assists: 279, adr: 76.4, hs: 48, kast: 71, rating: 1.12, clutchWon: 38, clutchPct: 41, entryKills: 96, openingPct: 54, tradePct: 63, utilDmg: 8.4, current: true },
-      { name: 'v1go', role: 'IGL · Rifle', matches: 70, kills: 1080, deaths: 1090, assists: 360, adr: 71.2, hs: 52, kast: 73, rating: 1.02, clutchWon: 31, clutchPct: 37, entryKills: 64, openingPct: 48, tradePct: 66, utilDmg: 11.2, current: true },
-      { name: 'mYst', role: 'Entry', matches: 68, kills: 1190, deaths: 1160, assists: 240, adr: 78.9, hs: 56, kast: 69, rating: 1.08, clutchWon: 22, clutchPct: 33, entryKills: 188, openingPct: 58, tradePct: 60, utilDmg: 6.1, current: true },
-      { name: 'Karob', role: 'Support', matches: 70, kills: 940, deaths: 1050, assists: 410, adr: 66.5, hs: 45, kast: 74, rating: 0.96, clutchWon: 26, clutchPct: 35, entryKills: 52, openingPct: 44, tradePct: 70, utilDmg: 14.6, current: true },
-      { name: 'refrezh', role: 'Lurk', matches: 70, kills: 1100, deaths: 1010, assists: 280, adr: 75.3, hs: 51, kast: 72, rating: 1.10, clutchWon: 35, clutchPct: 39, entryKills: 78, openingPct: 50, tradePct: 65, utilDmg: 9.2, current: true },
-      { name: 'f0xx', role: 'Lurker', matches: 64, kills: 1110, deaths: 1020, assists: 270, adr: 74.1, hs: 50, kast: 70, rating: 1.10, clutchWon: 44, clutchPct: 46, entryKills: 71, openingPct: 51, tradePct: 58, utilDmg: 7.3, current: true },
-      { name: 'nyte', role: 'Rifle · Sub', matches: 22, kills: 360, deaths: 350, assists: 90, adr: 72.0, hs: 49, kast: 70, rating: 1.04, clutchWon: 9, clutchPct: 38, entryKills: 40, openingPct: 52, tradePct: 62, utilDmg: 8.0, current: false },
-      { name: 'zede', role: 'Rifle · Former', matches: 18, kills: 280, deaths: 300, assists: 70, adr: 68.4, hs: 47, kast: 68, rating: 0.95, clutchWon: 6, clutchPct: 31, entryKills: 33, openingPct: 47, tradePct: 61, utilDmg: 7.9, current: false },
+      { name: 'AsO4-', role: 'AWP', matches: 70, kills: 1225, deaths: 1127, assists: 279, adr: 76.4, hs: 48, kast: 71, rating: 1.12, clutchWon: 38, clutchPct: 41, entryKills: 96, openingPct: 54, tradePct: 63, utilDmg: 8.4, current: true, dmg: 100, onek: 100, twok: 200, threek:300, fourk: 400, ace:500},
+      { name: 'v1go', role: 'IGL · Rifle', matches: 70, kills: 1080, deaths: 1090, assists: 360, adr: 71.2, hs: 52, kast: 73, rating: 1.02, clutchWon: 31, clutchPct: 37, entryKills: 64, openingPct: 48, tradePct: 66, utilDmg: 11.2, current: true, dmg: 100, onek: 100, twok: 200, threek:300, fourk: 400, ace:500},
+      { name: 'mYst', role: 'Entry', matches: 68, kills: 1190, deaths: 1160, assists: 240, adr: 78.9, hs: 56, kast: 69, rating: 1.08, clutchWon: 22, clutchPct: 33, entryKills: 188, openingPct: 58, tradePct: 60, utilDmg: 6.1, current: true, dmg: 100, onek: 100, twok: 200, threek:300, fourk: 400, ace:500},
+      { name: 'Karob', role: 'Support', matches: 70, kills: 940, deaths: 1050, assists: 410, adr: 66.5, hs: 45, kast: 74, rating: 0.96, clutchWon: 26, clutchPct: 35, entryKills: 52, openingPct: 44, tradePct: 70, utilDmg: 14.6, current: true, dmg: 100, onek: 100, twok: 200, threek:300, fourk: 400, ace:500},
+      { name: 'refrezh', role: 'Lurk', matches: 70, kills: 1100, deaths: 1010, assists: 280, adr: 75.3, hs: 51, kast: 72, rating: 1.10, clutchWon: 35, clutchPct: 39, entryKills: 78, openingPct: 50, tradePct: 65, utilDmg: 9.2, current: true, dmg: 100, onek: 100, twok: 200, threek:300, fourk: 400, ace:500},
+      { name: 'f0xx', role: 'Lurker', matches: 64, kills: 1110, deaths: 1020, assists: 270, adr: 74.1, hs: 50, kast: 70, rating: 1.10, clutchWon: 44, clutchPct: 46, entryKills: 71, openingPct: 51, tradePct: 58, utilDmg: 7.3, current: true, dmg: 100, onek: 100, twok: 200, threek:300, fourk: 400, ace:500},
+      { name: 'nyte', role: 'Rifle · Sub', matches: 22, kills: 360, deaths: 350, assists: 90, adr: 72.0, hs: 49, kast: 70, rating: 1.04, clutchWon: 9, clutchPct: 38, entryKills: 40, openingPct: 52, tradePct: 62, utilDmg: 8.0, current: false, dmg: 100, onek: 100, twok: 200, threek:300, fourk: 400, ace:500},
+      { name: 'zede', role: 'Rifle · Former', matches: 18, kills: 280, deaths: 300, assists: 70, adr: 68.4, hs: 47, kast: 68, rating: 0.95, clutchWon: 6, clutchPct: 31, entryKills: 33, openingPct: 47, tradePct: 61, utilDmg: 7.9, current: false, dmg: 100, onek: 100, twok: 200, threek:300, fourk: 400, ace:500},
     )
     teamStats.push(
       createStatCol('Matches', '70', 0, false),
@@ -181,22 +192,22 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
 
 
 
-  const recentMatches: Match[] = [
-    { result: 'W 13-8', win: true, opponent: 'Spectrum', map: 'de_ancient', topName: 'AsO4-', topLine: '24-14' },
-    { result: 'L 9-13', win: false, opponent: 'SG-Fusion', map: 'de_overpass', topName: 'mYst', topLine: '21-17' },
-    { result: 'L 8-13', win: false, opponent: 'Adroit 5', map: 'de_ancient', topName: 'f0xx', topLine: '19-16' },
-    { result: 'W 13-10', win: true, opponent: 'MonkeyGaming', map: 'de_dust2', topName: 'AsO4-', topLine: '26-13' },
-    { result: 'L 6-13', win: false, opponent: 'Les poules en rute', map: 'de_mirage', topName: 'mYst', topLine: '18-15' },
-  ];
+  // const recentMatches: Match[] = [
+  //   { result: 'W 13-8', win: true, opponent: 'Spectrum', map: 'de_ancient', topName: 'AsO4-', topLine: '24-14' },
+  //   { result: 'L 9-13', win: false, opponent: 'SG-Fusion', map: 'de_overpass', topName: 'mYst', topLine: '21-17' },
+  //   { result: 'L 8-13', win: false, opponent: 'Adroit 5', map: 'de_ancient', topName: 'f0xx', topLine: '19-16' },
+  //   { result: 'W 13-10', win: true, opponent: 'MonkeyGaming', map: 'de_dust2', topName: 'AsO4-', topLine: '26-13' },
+  //   { result: 'L 6-13', win: false, opponent: 'Les poules en rute', map: 'de_mirage', topName: 'mYst', topLine: '18-15' },
+  // ];
 
-  const economyStats: StatColumn[] = [
-    createStatCol('Pistol Win %', '53%', 0, true),
-    createStatCol('T-Side Win %', '49%', 1, false),
-    createStatCol('CT-Side Win %', '56%', 2, false),
-    createStatCol('Eco Conv %', '24%', 3, false),
-    createStatCol('Force-Buy %', '42%', 4, false),
-    createStatCol('Full-Buy %', '67%', 5, false),
-  ];
+  // const economyStats: StatColumn[] = [
+  //   createStatCol('Pistol Win %', '53%', 0, true),
+  //   createStatCol('T-Side Win %', '49%', 1, false),
+  //   createStatCol('CT-Side Win %', '56%', 2, false),
+  //   createStatCol('Eco Conv %', '24%', 3, false),
+  //   createStatCol('Force-Buy %', '42%', 4, false),
+  //   createStatCol('Full-Buy %', '67%', 5, false),
+  // ];
 
   // ========================================================================
   // COMPUTED DATA
@@ -340,7 +351,7 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
             </button>
           ))}
         </div>
-
+        
         {/* TEAM TAB */}
         {tab === 'Team' && (
           <>
@@ -363,10 +374,20 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
                       <th>Player</th>
                       <th>Matches</th>
                       <th>Kills</th>
+                      <th>Assists</th>
                       <th>Deaths</th>
+                      <th>KD+-</th>
                       <th>K / D</th>
+                      <th>1K</th>
+                      <th>2K</th>
+                      <th>3K</th>
+                      <th>4K</th>
+                      <th>5K</th>
                       <th>ADR</th>
+                      <th>DMG</th>
+                      <th>UD</th>
                       <th>HS %</th>
+                      <th>KAST%</th>
                       <th>Rating</th>
                     </tr>
                   </thead>
@@ -388,12 +409,22 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
                         </td>
                         <td className="cell-matches">{p.matches}</td>
                         <td className="cell-kills">{p.kills}</td>
+                        <td className="cell-ass">{p.assists}</td>
                         <td className="cell-deaths">{p.deaths}</td>
+                        <td className="cell-deaths">{p.kills - p.deaths}</td>
                         <td className={`cell-kd ${p.kdColor === '#2ecc71' ? 'cell-kd-good' : 'cell-kd-bad'}`}>
                           {p.kd}
                         </td>
+                        <td className="cell-adr">{p.onek}</td>
+                        <td className="cell-adr">{p.twok}</td>
+                        <td className="cell-adr">{p.threek}</td>
+                        <td className="cell-adr">{p.fourk}</td>
+                        <td className="cell-adr">{p.ace}</td>
                         <td className="cell-adr">{p.adr}</td>
-                        <td className="cell-hs">{p.hs}</td>
+                        <td className="cell-adr">{p.dmg}</td>
+                        <td className="cell-adr">{p.utilDmg}</td>
+                        <td className="cell-hs">{p.hs}%</td>
+                        <td className="cell-kast">{p.kast}%</td>
                         <td
                           className={`cell-rating ${
                             p.ratingColor === '#2ecc71'
@@ -416,7 +447,7 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
             <div className="matches-container">
               <div className="matches-label">Recent Matches</div>
               <div className="matches-list">
-                {recentMatches.map((m: Match, idx: number): ReactElement => (
+                {/* {recentMatches.map((m: Match, idx: number): ReactElement => (
                   <div key={idx} className="match-item">
                     <div className={`match-result ${m.win ? 'match-result-win' : 'match-result-loss'}`}>
                       {m.result}
@@ -427,7 +458,7 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
                       Top: <span className="match-top-name">{m.topName}</span> {m.topLine}
                     </div>
                   </div>
-                ))}
+                ))} */}
               </div>
             </div>
           </>
@@ -484,7 +515,7 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
             {/* Round Economy */}
             <div className="stat-grid-container">
               <div className="stat-grid-label">Round Economy</div>
-              <StatGrid stats={economyStats} />
+              {/* <StatGrid stats={economyStats} /> */}
             </div>
 
             {/* Map Performance */}

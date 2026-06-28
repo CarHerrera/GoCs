@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	ex "github.com/markus-wa/demoinfocs-golang/v5/examples"
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
@@ -10,14 +11,22 @@ import (
 )
 
 type DemoSetup struct {
-	MatchId int
-	GameMap string
-	Teams   [2]Team
-	Live    bool
+	MatchId   int
+	GameMap   string
+	Teams     [2]Team
+	Live      bool
+	FirstKill bool
+}
+type MatchEvents struct {
+	RoundPositions RoundInfo                   `json:"round_events"`
+	Rounds         int                         `json:"rounds"`
+	MapMeta        ex.Map                      `json:"map"`
+	Teams          map[string]map[int64]string `json:"teams"`
 }
 type RoundTracker struct {
 	Teams      *[2]Team
 	Live       *bool
+	FirstKill  *bool
 	LRTH       bool
 	Catch      bool
 	Matchid    int
@@ -27,11 +36,12 @@ type RoundTracker struct {
 
 func newRoundTracker(setup *DemoSetup, rounds *int) *RoundTracker {
 	return &RoundTracker{
-		Teams:   &setup.Teams,
-		Live:    &setup.Live,
-		Catch:   true,
-		Matchid: setup.MatchId,
-		Rounds:  rounds,
+		Teams:     &setup.Teams,
+		Live:      &setup.Live,
+		Catch:     true,
+		Matchid:   setup.MatchId,
+		Rounds:    rounds,
+		FirstKill: &setup.FirstKill,
 	}
 }
 func setupDemoFile(fileName string) (*os.File, dem.Parser, error) {
@@ -44,6 +54,7 @@ func setupDemoFile(fileName string) (*os.File, dem.Parser, error) {
 		MsgQueueBufferSize:        0,
 		IgnorePacketEntitiesPanic: true,
 	})
+
 	return file, p, nil
 }
 
@@ -94,11 +105,7 @@ func setupTeams(p dem.Parser, setup *DemoSetup, rt *RoundTracker) {
 			DB.Exec("INSERT IGNORE INTO TEAMS (TEAMNAME) VALUES (?)", teamName)
 			for _, player := range side.state.Members() {
 				setup.Teams[side.idx].PlayingPlayers[int64(player.SteamID64)] = Player{
-					Name: player.Name, ID: int64(player.SteamID64), Stats: PlayerStats{
-						Kills:   0,
-						Assists: 0,
-						Deaths:  0,
-					},
+					Name: player.Name, ID: int64(player.SteamID64), Stats: PlayerStats{},
 				}
 				ensurePlayerExists(int64(player.SteamID64), player.Name)
 			}
@@ -163,7 +170,7 @@ func setupRoundInfo(p dem.Parser, rt *RoundTracker) {
 		}
 
 		gs := p.GameState()
-		DB.Exec("INSERT IGNORE INTO ROUNDS (MATCHID, ROUND_NO) VALUES (?,?)", *rt.Rounds, rt.Matchid)
+		DB.Exec("INSERT IGNORE INTO ROUNDS (ROUND_NO,MATCHID) VALUES (?,?)", *rt.Rounds, rt.Matchid)
 		var tTotal, ctTotal, tCount, ctCount int
 		tside := gs.TeamTerrorists().ClanName()
 		ctside := gs.TeamCounterTerrorists().ClanName()
@@ -176,7 +183,7 @@ func setupRoundInfo(p dem.Parser, rt *RoundTracker) {
 				ctTotal += player.EquipmentValueCurrent()
 				ctCount++
 			}
-			DB.Exec("INSERT IGNORE INTO ROUND_PARTICIPANTS (MATCHID,ROUND_NO,PLAYERID,SIDE) VALUES (?,?,?,?)", rt.Matchid, rt.Rounds, int64(player.SteamID64), player.Team)
+			DB.Exec("INSERT IGNORE INTO ROUND_PARTICIPANTS (MATCHID,ROUND_NO,PLAYERID,SIDE) VALUES (?,?,?,?)", rt.Matchid, *rt.Rounds, int64(player.SteamID64), player.Team)
 		}
 
 		if tCount == 0 || ctCount == 0 {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,36 +31,34 @@ import (
 
 func getPlayerPageData(db *sql.DB, accountID int64) (*PlayerPageData, error) {
 	data := &PlayerPageData{}
-
 	err := db.QueryRow(`
-		SELECT 
-			u.ACCOUNTID,
-			u.USERNAME,
-			u.STEAMID,
-			u.STEAM_VER,
-			p.PLAYERNAME,
-			ms.TEAMNAME
-		FROM USER_ACCOUNTS u
-		LEFT JOIN PLAYERS p ON p.PLAYERID = u.STEAMID
-		LEFT JOIN MATCH_STATS ms ON ms.PLAYERID = p.PLAYERID
-			AND ms.MATCHID = (
-				SELECT MATCHID FROM MATCH_STATS
-				WHERE PLAYERID = p.PLAYERID
-				ORDER BY MATCHID DESC LIMIT 1
-			)
-		WHERE u.ACCOUNTID = ?
-	`, accountID).Scan(
+        SELECT 
+            u.ACCOUNTID,
+            u.USERNAME,
+            u.STEAMID,
+            u.STEAM_VER,
+            p.PLAYERNAME,
+            ms.TEAMNAME
+        FROM USER_ACCOUNTS u
+        LEFT JOIN PLAYERS p ON p.PLAYERID = u.STEAMID
+        LEFT JOIN MATCH_STATS ms ON ms.PLAYERID = p.PLAYERID
+            AND ms.MATCHID = (
+                SELECT MATCHID FROM MATCH_STATS
+                WHERE PLAYERID = p.PLAYERID
+                ORDER BY MATCHID DESC LIMIT 1
+            )
+        WHERE u.ACCOUNTID = ?
+    `, accountID).Scan(
 		&data.AccountID,
 		&data.Username,
-		&data.SteamID, // sql.NullInt64 handles NULL safely
+		&data.SteamID,
 		&data.SteamVer,
-		&data.PlayerName, // sql.NullString handles NULL safely
+		&data.PlayerName,
 		&data.TeamName,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("getPlayerPageData: %w", err)
 	}
-
 	return data, nil
 }
 
@@ -534,6 +533,7 @@ func main() {
 		var accountID int64
 		if err := DB.QueryRow("SELECT ACCOUNTID FROM USER_ACCOUNTS WHERE STEAMID = ?", steamID).Scan(&accountID); err != nil {
 			if err == sql.ErrNoRows {
+				fmt.Print("NEW ACCOUNT FOUND")
 				c.Cookie(&fiber.Cookie{
 					Name:     "new_account",
 					Value:    "true",
@@ -542,27 +542,31 @@ func main() {
 					SameSite: "Lax",
 				})
 				return c.Redirect().Status(303).To("http://localhost:5173/")
+			} else {
+				return c.Status(500).SendString("SQL ERROR")
 			}
+		} else {
+			token, err := generateJWT(accountID)
+			if err != nil {
+				log.Println("Failed to generate JWT:", err)
+				return c.Status(500).SendString("Failed to generate token")
+			}
+			if len(result.Response.Players) == 0 {
+				return c.Status(500).SendString("no players found for steamID:" + steamID)
+			}
+			log.Printf("RESPONSE: %v", result)
+			c.Cookie(&fiber.Cookie{
+				Name:     "auth_token",
+				Value:    token,
+				HTTPOnly: true,
+				Expires:  time.Now().Add(24 * time.Hour),
+				// SameSite must be Lax here because we're redirecting from Steam's domain
+				// Strict would block the cookie since the request is cross-site
+				SameSite: "Lax",
+			})
+			return c.Redirect().Status(303).To("http://localhost:5173/accountHome")
 		}
-		token, err := generateJWT(accountID)
-		if err != nil {
-			log.Println("Failed to generate JWT:", err)
-			return c.Status(500).SendString("Failed to generate token")
-		}
-		if len(result.Response.Players) == 0 {
-			return c.Status(500).SendString("no players found for steamID:" + steamID)
-		}
-		log.Printf("RESPONSE: %v", result)
-		c.Cookie(&fiber.Cookie{
-			Name:     "auth_token",
-			Value:    token,
-			HTTPOnly: true,
-			Expires:  time.Now().Add(24 * time.Hour),
-			// SameSite must be Lax here because we're redirecting from Steam's domain
-			// Strict would block the cookie since the request is cross-site
-			SameSite: "Lax",
-		})
-		return c.Redirect().Status(303).To("http://localhost:5173/accountHome")
+		// return c.Status(500).SendString("SOMETHING WENT WRONG")
 	})
 	app.Post("/auth/register", func(c fiber.Ctx) error {
 		var result AccountRegister
@@ -711,17 +715,27 @@ func main() {
 				if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
 					if len(result.Response.Players) > 0 {
 						response["profilePic"] = result.Response.Players[0].Avatar
+						response["profilePicfull"] = result.Response.Players[0].AvatarFull
 					}
 				}
 			}
-
-			query := `SELECT SUM(TOTAL_KILLS) AS KILLS, SUM(TOTAL_DEATHS) AS DEATHS, SUM(TOTAL_ASSISTS) AS ASSISTS, COUNT(*) AS APPEARANCES FROM MATCH_STATS WHERE PLAYERID = ?`
+			var kd float64
+			query := `
+			SELECT 
+				COALESCE(SUM(TOTAL_KILLS), 0) AS KILLS, 
+				COALESCE(SUM(TOTAL_DEATHS), 0) AS DEATHS, 
+				COALESCE(SUM(TOTAL_ASSISTS), 0) AS ASSISTS, 
+				COUNT(*) AS APPEARANCES 
+			FROM MATCH_STATS WHERE PLAYERID = ?`
 			var k, a, d, app int
 			erm := DB.QueryRow(query, data.SteamID.Int64).Scan(&k, &d, &a, &app)
 			if erm == nil {
 				// Create the object to send
+				if d > 0 {
+					kd = float64(k) / float64(d)
+				}
 				response["stats"] = fiber.Map{
-					"appearances": app, "kills": k, "assists": a, "deaths": d, "KD": float64(k) / float64(d),
+					"appearances": app, "kills": k, "assists": a, "deaths": d, "KD": kd,
 				}
 			} else {
 				log.Printf("Err :%v", erm)
@@ -802,75 +816,205 @@ func main() {
 		if err != nil {
 			return c.Status(500).SendString("Failed to load player data")
 		}
+		if !data.TeamName.Valid {
+			return c.Status(400).JSON(fiber.Map{"error": "No team linked to this account"})
+		}
 		query := `
-		SELECT 
-			p.PLAYERID,
-			p.PLAYERNAME,
-			SUM(ms.TOTAL_KILLS) AS KILLS,
-			SUM(ms.TOTAL_DEATHS) AS DEATHS,
-			SUM(ms.TOTAL_ASSISTS) AS ASSISTS,
-			COUNT(ms.MATCHID) AS MATCHES_PLAYED,
-			SUM(CASE 
-				WHEN ms.TEAMNAME = m.TEAM_A_NAME AND m.TEAM_A_FINAL_SCORE > m.TEAM_B_FINAL_SCORE THEN 1
-				WHEN ms.TEAMNAME = m.TEAM_B_NAME AND m.TEAM_B_FINAL_SCORE > m.TEAM_A_FINAL_SCORE THEN 1
-				ELSE 0
-			END) AS WINS,
-			SUM(CASE 
-				WHEN ms.TEAMNAME = m.TEAM_A_NAME AND m.TEAM_A_FINAL_SCORE < m.TEAM_B_FINAL_SCORE THEN 1
-				WHEN ms.TEAMNAME = m.TEAM_B_NAME AND m.TEAM_B_FINAL_SCORE < m.TEAM_A_FINAL_SCORE THEN 1
-				ELSE 0
-			END) AS LOSSES
-		FROM PLAYERS p
-		JOIN MATCH_STATS ms ON p.PLAYERID = ms.PLAYERID
-		JOIN MATCHES m ON ms.MATCHID = m.MATCHID
-		WHERE ms.TEAMNAME = ?
-		GROUP BY p.PLAYERID, p.PLAYERNAME, ms.TEAMNAME
-		ORDER BY KILLS DESC
-		`
+		SELECT
+		p.PLAYERID,
+        p.PLAYERNAME,
+        COALESCE(SUM(ms.TOTAL_KILLS), 0)           AS KILLS,
+        COALESCE(SUM(ms.TOTAL_DEATHS), 0)          AS DEATHS,
+        COALESCE(SUM(ms.TOTAL_ASSISTS), 0)         AS ASSISTS,
+        COUNT(DISTINCT ms.MATCHID)                 AS MATCHES_PLAYED,
+        COALESCE(SUM(ms.TOTAL_DAMAGE), 0)          AS TOTAL_DAMAGE,
+        COALESCE(SUM(ms.HEADSHOTS), 0)             AS HEADSHOTS,
+        COALESCE(SUM(ms.ENTRY_KILLS), 0)           AS ENTRY_KILLS,
+        COALESCE(SUM(ms.ENTRY_DEATHS), 0)          AS ENTRY_DEATHS,
+		COALESCE(SUM(ms.ONE_KILL_COUNT), 0)        AS ONEK,
+		COALESCE(SUM(ms.TWO_KILL_COUNT), 0)        AS TWOK,
+		COALESCE(SUM(ms.THREE_KILL_COUNT), 0)      AS THREEK,
+		COALESCE(SUM(ms.FOUR_KILL_COUNT), 0)       AS FOURK,
+		COALESCE(SUM(ms.FIVE_KILL_COUNT), 0)       AS ACE,
+        COALESCE(SUM(ms.CLUTCHES_WON), 0)          AS CLUTCHES_WON,
+        COALESCE(SUM(ms.CLUTCHES_COUNT), 0)        AS CLUTCHES_COUNT,
+        COALESCE(SUM(ms.UTILITY_DAMAGE), 0)        AS UTILITY_DAMAGE,
+        COALESCE(SUM(ms.FLASH_ASSISTS), 0)         AS FLASH_ASSISTS,
+        COALESCE(SUM(rp_stats.ROUNDS), 0)          AS ROUNDS_PLAYED,
+        COALESCE(SUM(rp_stats.KAST), 0)            AS KAST_ROUNDS,
+		COALESCE(SUM(rp_stats.PISTOL_ROUNDS), 0)   AS PISTOL_ROUNDS,
+		COALESCE(SUM(rp_stats.ECO_ROUNDS), 0)      AS ECO_ROUNDS,
+		COALESCE(SUM(rp_stats.FORCE_ROUNDS), 0)    AS FORCE_ROUNDS,
+		COALESCE(SUM(rp_stats.FULL_BUY_ROUNDS), 0) AS FULL_BUY_ROUNDS,
+		COALESCE(SUM(rp_stats.PISTOL_WINS), 0)     AS PISTOL_WINS,
+		COALESCE(SUM(rp_stats.ECO_WINS), 0)        AS ECO_WINS,
+		COALESCE(SUM(rp_stats.FORCE_WINS), 0)      AS FORCE_WINS,
+		COALESCE(SUM(rp_stats.FULL_BUY_WINS), 0)   AS FULL_BUY_WINS,
+        SUM(CASE 
+            WHEN ms.TEAMNAME = m.TEAM_A_NAME AND m.TEAM_A_FINAL_SCORE > m.TEAM_B_FINAL_SCORE THEN 1
+            WHEN ms.TEAMNAME = m.TEAM_B_NAME AND m.TEAM_B_FINAL_SCORE > m.TEAM_A_FINAL_SCORE THEN 1
+            ELSE 0
+        END) AS WINS,
+        SUM(CASE 
+            WHEN ms.TEAMNAME = m.TEAM_A_NAME AND m.TEAM_A_FINAL_SCORE < m.TEAM_B_FINAL_SCORE THEN 1
+            WHEN ms.TEAMNAME = m.TEAM_B_NAME AND m.TEAM_B_FINAL_SCORE < m.TEAM_A_FINAL_SCORE THEN 1
+            ELSE 0
+        END) AS LOSSES
+    FROM PLAYERS p
+    JOIN MATCH_STATS ms ON p.PLAYERID = ms.PLAYERID
+    JOIN MATCHES m ON ms.MATCHID = m.MATCHID
+    LEFT JOIN (
+        SELECT 
+        rp.PLAYERID,
+        rp.MATCHID,
+        COUNT(DISTINCT rp.ROUND_NO) AS ROUNDS,
+        SUM(CASE 
+            WHEN rp.GOT_KILL = 1 OR rp.GOT_ASSIST = 1 
+              OR rp.SURVIVED = 1  OR rp.GOT_TRADED = 1 
+            THEN 1 ELSE 0 
+        END) AS KAST,
+        -- Round counts by type
+        SUM(CASE WHEN (rp.SIDE = 2 AND r.BUY_TYPE_T  = 1) OR (rp.SIDE = 3 AND r.BUY_TYPE_CT = 1) THEN 1 ELSE 0 END) AS PISTOL_ROUNDS,
+        SUM(CASE WHEN (rp.SIDE = 2 AND r.BUY_TYPE_T  = 2) OR (rp.SIDE = 3 AND r.BUY_TYPE_CT = 2) THEN 1 ELSE 0 END) AS ECO_ROUNDS,
+        SUM(CASE WHEN (rp.SIDE = 2 AND r.BUY_TYPE_T  = 3) OR (rp.SIDE = 3 AND r.BUY_TYPE_CT = 3) THEN 1 ELSE 0 END) AS FORCE_ROUNDS,
+        SUM(CASE WHEN (rp.SIDE = 2 AND r.BUY_TYPE_T  = 4) OR (rp.SIDE = 3 AND r.BUY_TYPE_CT = 4) THEN 1 ELSE 0 END) AS FULL_BUY_ROUNDS,
+        -- Win counts by type
+        SUM(CASE WHEN r.WINNING_SIDE = rp.SIDE AND ((rp.SIDE = 2 AND r.BUY_TYPE_T  = 1) OR (rp.SIDE = 3 AND r.BUY_TYPE_CT = 1)) THEN 1 ELSE 0 END) AS PISTOL_WINS,
+        SUM(CASE WHEN r.WINNING_SIDE = rp.SIDE AND ((rp.SIDE = 2 AND r.BUY_TYPE_T  = 2) OR (rp.SIDE = 3 AND r.BUY_TYPE_CT = 2)) THEN 1 ELSE 0 END) AS ECO_WINS,
+        SUM(CASE WHEN r.WINNING_SIDE = rp.SIDE AND ((rp.SIDE = 2 AND r.BUY_TYPE_T  = 3) OR (rp.SIDE = 3 AND r.BUY_TYPE_CT = 3)) THEN 1 ELSE 0 END) AS FORCE_WINS,
+        SUM(CASE WHEN r.WINNING_SIDE = rp.SIDE AND ((rp.SIDE = 2 AND r.BUY_TYPE_T  = 4) OR (rp.SIDE = 3 AND r.BUY_TYPE_CT = 4)) THEN 1 ELSE 0 END) AS FULL_BUY_WINS
+    FROM ROUND_PARTICIPANTS rp
+    JOIN ROUNDS r ON r.MATCHID = rp.MATCHID AND r.ROUND_NO = rp.ROUND_NO
+    GROUP BY rp.PLAYERID, rp.MATCHID
+    ) rp_stats ON rp_stats.PLAYERID = p.PLAYERID AND rp_stats.MATCHID = ms.MATCHID
+	 WHERE ms.TEAMNAME = ?
+	 GROUP BY p.PLAYERID, p.PLAYERNAME
+	 ORDER BY KILLS DESC
+	 `
+
 		max_wins := 0
 		max_loss := 0
+		var (
+			pistol = float64(0)
+			eco    = float64(0)
+			force  = float64(0)
+			full   = float64(0)
+		)
+
 		team_players, err := DB.Query(query, data.TeamName.String)
+		if err != nil {
+			log.Printf("Team query error: %v", err)
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to load team data"})
+		}
 		roster := []fiber.Map{}
-		if err == nil {
-			for team_players.Next() {
-				var playerid int64
-				var name string
-				var kills, ass, deaths, app int
-				var wins, loss int
-				// player_matches.Scan(&filename, &gamemap, &teama, &teamb, &teama_score, &teamb_score, &k, &a, &d, &name, &team)
-				team_players.Scan(&playerid, &name, &kills, &deaths, &ass, &app, &wins, &loss)
-				if wins > max_wins {
-					max_wins = wins
-				}
-				if loss > max_loss {
-					max_loss = loss
-				}
-				roster = append(roster, fiber.Map{
-					"name":       name,
-					"kills":      kills,
-					"assists":    ass,
-					"deaths":     deaths,
-					"matches":    app,
-					"role":       "player",
-					"adr":        0,
-					"hs":         0,
-					"kast":       0,
-					"rating":     2.0,
-					"clutchWon":  2,
-					"clutchPct":  .5,
-					"entryKills": 0,
-					"openingPct": 0,
-					"tradePct":   0,
-					"utilDmg":    0,
-					"current":    true,
-				})
+		defer team_players.Close()
+		for team_players.Next() {
+			var playerid int64
+			var name string
+			var kills, deaths, assists, app int
+			var totalDamage, headshots int
+			var entryKills, entryDeaths int
+			var onek, twok, threek, fourk, ace int
+			var clutchesWon, clutchesCount int
+			var utilDamage, flashAssists int
+			var roundsPlayed, kastRounds int
+			var pistolRounds, ecoRounds, forceRounds, fullBuyRounds int
+			var pistolWins, ecoWins, forceWins, fullBuyWins int
+			var wins, loss int
+
+			if err := team_players.Scan(
+				&playerid, &name,
+				&kills, &deaths, &assists, &app,
+				&totalDamage, &headshots,
+				&entryKills, &entryDeaths,
+				&onek, &twok, &threek, &fourk, &ace,
+				&clutchesWon, &clutchesCount,
+				&utilDamage, &flashAssists,
+				&roundsPlayed, &kastRounds,
+				&pistolRounds, &ecoRounds, &forceRounds, &fullBuyRounds,
+				&pistolWins, &ecoWins, &forceWins, &fullBuyWins,
+				&wins, &loss,
+			); err != nil {
+				log.Printf("Scan error: %v", err)
+				continue
 			}
+
+			var adr, hsPct, kd, entryPct, clutchPct, kast, rating float64
+
+			if kills > 0 {
+				hsPct = float64(headshots) / float64(kills) * 100
+			}
+			if deaths > 0 {
+				kd = float64(kills) / float64(deaths)
+			}
+			openingDuels := entryKills + entryDeaths
+			if openingDuels > 0 {
+				entryPct = float64(entryKills) / float64(openingDuels) * 100
+			}
+			if clutchesCount > 0 {
+				clutchPct = float64(clutchesWon) / float64(clutchesCount) * 100
+			}
+
+			if wins > max_wins {
+				max_wins = wins
+			}
+			if loss > max_loss {
+				max_loss = loss
+			}
+			kpr := safeDiv(kills, roundsPlayed) / 100
+			dpr := safeDiv(deaths, roundsPlayed) / 100
+			apr := safeDiv(assists, roundsPlayed) / 100
+			adr = safeDiv(totalDamage, roundsPlayed) / 100
+			kast = safeDiv(kastRounds, roundsPlayed) / 100
+
+			// HLTV Rating 2.0 formula
+			// Impact measures round-winning contribution beyond raw kills
+			impact := 2.13*kpr + 0.42*apr - 0.41
+			rating = 0.0073*kast*100 + 0.3591*kpr - 0.5329*dpr + 0.2372*impact + 0.0032*adr + 0.1587
+
+			roster = append(roster, fiber.Map{
+				"id":         playerid,
+				"name":       name,
+				"kills":      kills,
+				"assists":    assists,
+				"deaths":     deaths,
+				"matches":    wins + loss,
+				"wins":       wins,
+				"losses":     loss,
+				"adr":        math.Round(adr*10) / 10,
+				"dmg":        totalDamage,
+				"hs":         math.Round(hsPct*10) / 10,
+				"kd":         math.Round(kd*100) / 100,
+				"kast":       math.Round(kast*1000) / 10, // e.g. 0.731 → 73.1
+				"rating":     math.Round(rating*100) / 100,
+				"clutchWon":  clutchesWon,
+				"onek":       onek,
+				"twok":       twok,
+				"threek":     threek,
+				"fourk":      fourk,
+				"ace":        ace,
+				"clutchPct":  math.Round(clutchPct*10) / 10,
+				"entryKills": entryKills,
+				"openingPct": math.Round(entryPct*10) / 10,
+				"utilDmg":    utilDamage,
+				"flashAsts":  flashAssists,
+				"current":    true,
+			})
+			pistol = safeDiv(pistolWins, pistolRounds)
+			eco = safeDiv(ecoWins, ecoRounds)
+			force = safeDiv(forceWins, forceRounds)
+			full = safeDiv(fullBuyWins, fullBuyRounds)
 		}
 		TeamResponse := fiber.Map{
-			"players": roster,
-			"wins":    max_wins,
-			"loss":    max_loss,
+			"players":   roster,
+			"wins":      max_wins,
+			"loss":      max_loss,
+			"pistolpct": pistol,
+			"ecopct":    eco,
+			"fullpct":   full,
+			"forcepct":  force,
 		}
+		fmt.Print("SENDING TEAM DATA")
 		return c.JSON(TeamResponse)
 	})
 	app.Post("/auth/login", func(c fiber.Ctx) error {
@@ -916,9 +1060,7 @@ func main() {
 			MaxAge:   7 * 24 * 60 * 60,
 		})
 
-		return c.Status(200).JSON(fiber.Map{
-			"message": "Logged in successfully",
-		})
+		return c.Redirect().Status(303).To("http://localhost:5173/accountHome")
 	})
 	app.Post("/testFile", func(c fiber.Ctx) error {
 		file, err := c.FormFile("myfile")
@@ -975,4 +1117,10 @@ func getUserIDFromCookie(c fiber.Ctx) (int64, error) {
 	claims := token.Claims.(jwt.MapClaims)
 	userID := int64(claims["user_id"].(float64)) // JWT numbers are float64
 	return userID, nil
+}
+func safeDiv(a, b int) float64 {
+	if b == 0 {
+		return 0
+	}
+	return float64(a) / float64(b) * 100
 }

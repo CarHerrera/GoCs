@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/golang/geo/r2"
 	"github.com/golang/geo/r3"
-	ex "github.com/markus-wa/demoinfocs-golang/v5/examples"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 )
 
@@ -18,17 +17,6 @@ type BaseDemo struct {
 	ID        int
 }
 
-type PlayerStats struct {
-	Kills   int `json:"kills"`
-	Deaths  int `json:"deaths"`
-	Assists int `json:"assists"`
-}
-type MatchEvents struct {
-	RoundPositions RoundInfo                   `json:"round_events"`
-	Rounds         int                         `json:"rounds"`
-	MapMeta        ex.Map                      `json:"map"`
-	Teams          map[string]map[int64]string `json:"teams"`
-}
 type RoundInfo struct {
 	// map[TICK] -> Map(ID) i.e playerid or ent id -> State/Info
 	PlayerPositions map[int]map[int64]PlayerState `json:"player_positions"`
@@ -70,20 +58,7 @@ type PlayerInfo struct {
 	Name string `json:"name"`
 	Side int    `json:"side"`
 }
-type Player struct {
-	Name  string      `json:"name"`
-	ID    int64       `json:"ID,string"`
-	Stats PlayerStats `json:"stats"`
-}
-type Team struct {
-	ID             int              `json:"ID"`
-	ClanName       string           `json:"Clanname"`
-	EndScore       int              `json:"Endscore"`
-	TScore         int              `json:"TScore"`
-	CTScore        int              `json:"CTScore"`
-	PlayingPlayers map[int64]Player `json:"Playing"`
-	inited         bool
-}
+
 type posEntry struct {
 	matchID, roundNo, tick, side                              int
 	steamID                                                   uint64

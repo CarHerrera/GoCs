@@ -1406,6 +1406,9 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                 progressRef.current.value = tickRef.current.toString();
             }
             console.log(stats)
+            if (stats.round_events.player_positions==null){
+                return
+            }
             const {pos_x, pos_y, scale} = stats.map
             const originX = parseFloat(pos_x);
             const originY = parseFloat(pos_y);

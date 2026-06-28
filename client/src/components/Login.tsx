@@ -123,14 +123,14 @@ export default function Login() {
       setLoading(false);
     }
   }
-  // useEffect(() => {
-  //   const new_account = getCookies("new_account")
-  //   if (new_account){
-  //     setPanel('register')
-  //   } else {
-  //     setPanel('login')
-  //   }
-  // },[])
+  useEffect(() => {
+    const new_account = getCookies("new_account")
+    if (new_account){
+      setPanel('register')
+    } else {
+      setPanel('login')
+    }
+  },[])
   return (
     <div className={styles.page}>
       <div className={styles.viewport}>

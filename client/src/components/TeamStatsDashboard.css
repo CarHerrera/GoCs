@@ -14,7 +14,7 @@
 }
 
 .dashboard-container {
-  max-width: 1160px;
+  max-width: 1900px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -161,6 +161,7 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px;
   padding: 26px 12px;
+  height: 100%;
 }
 
 .stat-grid-label {

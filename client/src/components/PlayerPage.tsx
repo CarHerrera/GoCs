@@ -44,6 +44,7 @@ interface PlayerPageData {
   playerName?: string;
   teamName?: string;
   profilePic?: string;
+  profilePicfull?: string;
   // these get added later once you build out the stats endpoint
   stats?: SeasonStats;
   recentMatches?: Match[];
@@ -168,7 +169,7 @@ function NoMatchesState({ username }: { username: string }) {
         <div className={styles.playerHeader}>
           <div className={styles.playerAvatar}>{initials}</div>
           <div className={styles.playerMeta}>
-            <h1>{username}</h1>
+            <h1 className='username'>{username}</h1>
             <div className={styles.sub}>No matches parsed yet</div>
           </div>
         </div>
@@ -381,7 +382,7 @@ export default function PlayerPage() {
           <a href="#">Logout</a>
         </div>
         <div className={styles.navAvatar}>
-          <img src={data.profilePic}></img>
+          <img className={styles.img} src={data.profilePic}></img>
           </div> 
       </nav>
       <div className={styles.navAccent} />
@@ -391,7 +392,7 @@ export default function PlayerPage() {
         {/* Player Header */}
         <div className={styles.playerHeader}>
           <div className={styles.playerAvatar}>{
-          data.profilePic  == ""  ? initials : <><img src={data.profilePic!}></img></>
+          data.profilePic  == ""  ? initials : <><img className={styles.img} src={data.profilePicfull}></img></>
           }</div>
           <div className={styles.playerMeta}>
             <h1>{data.playerName ?? data.username}</h1>

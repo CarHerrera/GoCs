@@ -1,7 +1,8 @@
-import styles from './PlayerPage.module.css';
+import styles from '../css/PlayerPage.module.css';
 import { useState, useEffect } from 'react';
 import Cookies from 'js-cookie';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type MatchResult = 'win' | 'loss' ;
@@ -37,14 +38,8 @@ interface UnparsedNote {
 
 // This is what the API returns — matches your Go response shape
 interface PlayerPageData {
-  username: string;
-  steamLinked: boolean;
   hasMatches: boolean;
   steamId?: number;
-  playerName?: string;
-  teamName?: string;
-  profilePic?: string;
-  profilePicfull?: string;
   // these get added later once you build out the stats endpoint
   stats?: SeasonStats;
   recentMatches?: Match[];
@@ -110,15 +105,6 @@ function UnparsedCard({ note }: { note: UnparsedNote }) {
 function LoadingState() {
   return (
     <>
-      <nav className={styles.nav}>
-        <div className={styles.navLinks}>
-          <a href="#">Home</a>
-          <a href="#">Matches</a>
-          <a href="#">StratLab</a>
-          <a href="#">Logout</a>
-        </div>
-        <div className={styles.navAvatar} />
-      </nav>
       <div className={styles.navAccent} />
       <main className={styles.page}>
         <div className={styles.playerHeader}>
@@ -155,15 +141,6 @@ function NoMatchesState({ username }: { username: string }) {
   const initials = username.slice(0, 2).toUpperCase();
   return (
     <>
-      <nav className={styles.nav}>
-        <div className={styles.navLinks}>
-          <a href="accountHome">Home</a>
-          <a href="demoList">Matches</a>
-          <a href="#">StratLab</a>
-          <a href="#">Logout</a>
-        </div>
-        <div className={styles.navAvatar} />
-      </nav>
       <div className={styles.navAccent} />
       <main className={styles.page}>
         <div className={styles.playerHeader}>
@@ -312,12 +289,12 @@ function OnboardingModal({ onClose }: { onClose: () => void }) {
 
 export default function PlayerPage() {
   const [data, setData] = useState<PlayerPageData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    fetch('http://localhost:4000/api/player/me', { credentials: 'include' })
+    fetch('http://localhost:4000/api/player/me/stats', { credentials: 'include' })
       .then(res => {
         if (res.status === 401) {
           // Not logged in — kick them back to login
@@ -331,21 +308,21 @@ export default function PlayerPage() {
         console.log(d)
         if (!d) return;
         setData(d);
+        console.log(d)
         // Modal decision made here, after we have real data from the server
-        // Cookie is just a cache — server data is the source of truth
-        const isFirstVisit = !Cookies.get('firstVisit');
-        console.log(isFirstVisit)
-        if (isFirstVisit && !d.steamLinked) {
-          setShowModal(true);
-        } else {
-          Cookies.set('firstVisit', 'false', { expires: 365 });
-        }
+        // // Cookie is just a cache — server data is the source of truth
+        // const isFirstVisit = !Cookies.get('firstVisit');
+        // console.log(isFirstVisit)
+        // if (isFirstVisit && !d.steamLinked) {
+        //   setShowModal(true);
+        // } else {
+        //   Cookies.set('firstVisit', 'false', { expires: 365 });
+        // }
       })
       .catch(err => {
         console.error(err);
         setError('Something went wrong loading your profile.');
       })
-      .finally(() => setLoading(false));
   }, []); // empty array — runs once on mount, which is exactly what we want
 
   if (loading) return <LoadingState />;
@@ -362,42 +339,38 @@ export default function PlayerPage() {
   if (!data.hasMatches) {
     return <>
       {showModal && <OnboardingModal onClose={() => setShowModal(false)} />}    
-      <NoMatchesState username={data.username} />
+      {loading ? (
+        <NoMatchesState username="" />
+      ) :  user ? (
+        <NoMatchesState username={user.playerName ? user.playerName : user.username} />
+      ) : (<NoMatchesState username="An Error Occurred" />
+
+      ) }
     </>
   }
      
 
   // State 3 — full data, render the page
-  const initials = data.username.slice(0, 2).toUpperCase();
+  const initials = (user?.playerName ?? user?.username ?? '').slice(0, 2).toUpperCase();
 
   return (
     <>
       {showModal && <OnboardingModal onClose={() => setShowModal(false)} />}
 
-      <nav className={styles.nav}>
-        <div className={styles.navLinks}>
-          <a href="/accountHome">Home</a>
-          <a href="/demoList">Matches</a>
-          <a href="#">StratLab</a>
-          <a href="#">Logout</a>
-        </div>
-        <div className={styles.navAvatar}>
-          <img className={styles.img} src={data.profilePic}></img>
-          </div> 
-      </nav>
-      <div className={styles.navAccent} />
+      
+      {/* <div className={styles.navAccent} /> */}
 
       <main className={styles.page}>
 
         {/* Player Header */}
         <div className={styles.playerHeader}>
           <div className={styles.playerAvatar}>{
-          data.profilePic  == ""  ? initials : <><img className={styles.img} src={data.profilePicfull}></img></>
+          user?.profilePic  == ""  ? initials : <><img className={styles.img} src={user?.profilePicfull}></img></>
           }</div>
           <div className={styles.playerMeta}>
-            <h1>{data.playerName ?? data.username}</h1>
+            <h1>{user?.playerName ?? user?.username}</h1>
             <div className={styles.sub}>
-              {data.teamName ?? 'No team'} 
+              {user?.teamName ?? 'No team'}
             </div>
           </div>
         </div>
@@ -435,9 +408,9 @@ export default function PlayerPage() {
           }}>
             <div className={styles.teamName}>
               <div className={styles.teamBadge}>
-                {data.teamName?.slice(0, 2).toUpperCase() ?? '??'}
+                {user?.teamName?.slice(0, 2).toUpperCase() ?? '??'}
               </div>
-              {data.teamName ?? 'No team'}
+              {user?.teamName ?? 'No team'}
             </div>
           </div>
 

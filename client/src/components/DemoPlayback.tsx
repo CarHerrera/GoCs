@@ -1605,7 +1605,17 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                             msg += `Nothing`
                                             break
                                     }
-                                    return <li key={i}>{msg}</li>
+                                    return <li key={i} onClick={() => {
+                                        if (fullPlaybacRef.current) {
+                                            tickRef.current =  tick
+                                            
+                                            if (progressRef.current) {
+                                                progressRef.current.value = tick.toString()
+                                            }
+                                            RedrawAtTicK(fullPlaybacRef.current, tick)
+                                            // setPlaying((prev) => ({ ...prev, tick_no: target, playing:false}));
+                                        }
+                                    }}> {msg} </li>
                                 })
                         }
                     </ol>
@@ -1677,7 +1687,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                 Array.from(playbackRef.current!.player_pos.get(0)!.entries()).filter(([playerid]) => {
                                     const info = playbackRef.current!.player_info.get(playerid)!
                                     const side = info.side
-                                    return side == 2
+                                    return side != 2
                                 }).map(([playerid,ps], i) => {
                                     const name = playbackRef.current!.player_info.get(playerid)!.name
                                     const info:PlayerBox = {
@@ -1692,7 +1702,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                                 Array.from(playbackRef.current!.player_pos.get(0)!.entries()).filter(([playerid]) => {
                                     const info = playbackRef.current!.player_info.get(playerid)!
                                     const side = info.side
-                                    return side != 2
+                                    return side == 2
                                 }).map(([playerid, ps], i) => {
                                     const name = playbackRef.current!.player_info.get(playerid)!.name
                                     const info:PlayerBox = {

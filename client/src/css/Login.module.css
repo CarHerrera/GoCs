@@ -1,0 +1,124 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap');
+
+.page {
+  min-height: 100vh;
+  background: #0f1117;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Inter', sans-serif;
+}
+
+.card {
+  background: #1c1f2b;
+  border: 1px solid #252836;
+  border-radius: 16px;
+  padding: 48px 40px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.logo {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: #4f8ef7;
+  letter-spacing: 0.12em;
+  background: rgba(79, 142, 247, 0.1);
+  border: 1px solid rgba(79, 142, 247, 0.2);
+  padding: 6px 16px;
+  border-radius: 999px;
+  margin-bottom: 32px;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+
+.sub {
+  font-size: 13px;
+  color: #5c6080;
+  margin: 0 0 32px;
+  line-height: 1.6;
+}
+
+.steamBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 24px;
+  background: #1b2838;
+  border: 1px solid #2a475e;
+  border-radius: 8px;
+  color: #c7d5e0;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  margin-bottom: 16px;
+}
+
+.steamBtn:hover {
+  background: #2a475e;
+  border-color: #4f8ef7;
+  color: #fff;
+}
+
+.steamIcon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.note {
+  font-size: 11px;
+  color: #3a3f58;
+  margin: 0;
+}
+.viewport {
+  width: 100%;
+  max-width: 400px;
+  overflow: hidden;
+}
+
+.slider {
+  display: flex;
+  flex-direction: row;
+  width: 200%;
+  transition: transform 0.4s ease;
+  transform: translateX(0);
+}
+
+.sliderShifted {
+  transform: translateX(-50%);
+}
+
+.panel {
+  width: 50%;
+  display: flex;
+  justify-content: center;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 10px;
+}
+
+.btnRow {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  width: 100%;
+}

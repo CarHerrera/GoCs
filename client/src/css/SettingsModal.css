@@ -1,0 +1,558 @@
+/* ============================================================================
+   SETTINGS DRAWER
+   ============================================================================ */
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.settings-drawer {
+  width: 420px;
+  max-width: 100vw;
+  height: 100%;
+  background: #0f0f18;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.22s ease;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'Sora', sans-serif;
+  color: #fff;
+}
+
+.settings-close {
+  background: none;
+  border: none;
+  color: #6E6E80;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.settings-close:hover {
+  color: #ECECF1;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ============================================================================
+   SETTINGS NAV
+   ============================================================================ */
+
+.settings-nav {
+  display: flex;
+  gap: 2px;
+  padding: 12px 16px 0;
+  flex-shrink: 0;
+}
+
+.settings-nav-btn {
+  flex: 1;
+  padding: 8px 4px;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: #6E6E80;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  letter-spacing: 0.02em;
+}
+
+.settings-nav-btn.active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.settings-nav-btn:hover:not(.active) {
+  color: #ECECF1;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ============================================================================
+   SETTINGS BODY
+   ============================================================================ */
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px 32px;
+}
+
+.settings-body::-webkit-scrollbar {
+  width: 4px;
+}
+.settings-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.settings-body::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 4px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-section-desc {
+  margin: 0;
+  font-size: 13px;
+  color: #6E6E80;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ============================================================================
+   TEAM INFO SECTION
+   ============================================================================ */
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-field label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6E6E80;
+}
+
+.settings-input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #ECECF1;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+
+.settings-input:focus {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.settings-input[readonly] {
+  color: #6E6E80;
+  cursor: default;
+}
+
+.settings-hint {
+  font-size: 11px;
+  color: #4a4a58;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.logo-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo-preview {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3b82f6;
+  font-weight: 700;
+  font-size: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  overflow: hidden;
+}
+
+.logo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ============================================================================
+   PLAYER ROLES SECTION
+   ============================================================================ */
+
+.settings-player-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.settings-player-avatar {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3b82f6;
+  font-weight: 700;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.settings-player-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ECECF1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-role-input {
+  width: 110px;
+  flex: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #ECECF1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.settings-role-input:focus {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.settings-role-input::placeholder {
+  color: #4a4a58;
+}
+
+.settings-save-btn {
+  flex: none;
+  background: rgba(59, 130, 246, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px;
+  color: #3b82f6;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.settings-save-btn:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.28);
+}
+
+.settings-save-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ============================================================================
+   FILES SECTION
+   ============================================================================ */
+
+.settings-files-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-upload-btn {
+  background: rgba(59, 130, 246, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  color: #3b82f6;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.settings-upload-btn:hover {
+  background: rgba(59, 130, 246, 0.28);
+}
+
+.settings-loading,
+.settings-empty {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #4a4a58;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.settings-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-file-item {
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.settings-file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-file-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ECECF1;
+  font-family: 'JetBrains Mono', monospace;
+  word-break: break-all;
+}
+
+.settings-file-meta {
+  font-size: 11px;
+  color: #6E6E80;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.settings-file-season {
+  font-size: 11px;
+  color: #3b82f6;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.settings-file-notes {
+  font-size: 11px;
+  color: #9a9aa8;
+  font-style: italic;
+}
+
+/* ============================================================================
+   UPLOAD DEMO MODAL
+   ============================================================================ */
+
+.upload-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-modal {
+  background: #13131d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 28px 28px 24px;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: fadeUp 0.2s ease;
+}
+
+@keyframes fadeUp {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.upload-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.upload-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: 'Sora', sans-serif;
+  color: #fff;
+}
+
+.upload-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.upload-field label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6E6E80;
+}
+
+.upload-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.upload-file-name {
+  flex: 1;
+  min-width: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #9a9aa8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  padding: 9px 12px;
+}
+
+.upload-file-name.selected {
+  color: #ECECF1;
+}
+
+.upload-browse-btn {
+  flex: none;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  color: #ECECF1;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.upload-browse-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.upload-input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #ECECF1;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.upload-input:focus {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.upload-input::placeholder {
+  color: #4a4a58;
+}
+
+.upload-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.upload-cancel-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #6E6E80;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.upload-cancel-btn:hover {
+  color: #ECECF1;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.upload-submit-btn {
+  background: #3b82f6;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 22px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.upload-submit-btn:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.upload-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.upload-status {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  text-align: center;
+  padding: 2px 0;
+}
+
+.upload-status.success { color: #2ecc71; }
+.upload-status.error   { color: #e25563; }

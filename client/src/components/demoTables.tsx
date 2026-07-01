@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 interface fileInfo{
     filename: string,
     date: string,
+    savedate: string,
     filesize: number,
     map: string
     parsed: boolean
@@ -45,6 +46,7 @@ function DemoTable() {
         let date = x.date
         let parsed = x.parsed
         let stats = x.stats
+        let saved = x.savedate
         if (file[0] == "\""){
             file = x.filename.substring(1, file.length-1)
         }
@@ -54,9 +56,12 @@ function DemoTable() {
         if (date[0] == "\""){
             date = x.date.substring(1, date.length-1)
         }
+        if (saved[0] == "\""){
+            saved = x.savedate.substring(1, saved.length-1)
+        }
         console.log(x)
         console.log(stats)
-        return <tr key={i}><td>{file}</td><td>{date}</td><td>{map}</td><td>{stats ? "true" : "false" }</td><td>{parsed ? "true" : "false"}</td>
+        return <tr key={i}><td>{file}</td><td>{saved}</td><td>{date}</td><td>{map}</td><td>{stats ? "true" : "false" }</td><td>{parsed ? "true" : "false"}</td>
         <td><Link to={`/advancedStats?file=${file}&map=${map}`}>Stats</Link></td></tr>
     })
     return <>
@@ -65,6 +70,7 @@ function DemoTable() {
                 <thead>
                     <tr>
                         <th>File Name</th>
+                        <th>Day Played</th>
                         <th>Date Uploaded</th>
                         <th>Map</th>
                         <th>HasStats?</th>

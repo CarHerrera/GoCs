@@ -6,6 +6,8 @@ import { BrowserRouter, Link, Routes, Route } from 'react-router-dom';
 import TestKonva from './testingKonva.tsx';
 import Login from './components/Login.tsx';
 import TeamStatsDashboard from './components/TeamPage.tsx';
+import { AuthProvider } from './context/AuthContext';
+import Navbar from './components/Navbar';
 function Home() {
   const fileId = useId();
   return <>
@@ -24,19 +26,20 @@ function App() {
 
   return (
     <>
-
     <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/demoList" element={<DemoTable />} />
-          <Route path="/advancedStats" element={<AdvancedStats  />} />
-          <Route path="/accountHome" element={
-            <PlayerPage ></PlayerPage>}/>
-          <Route path="/Test" element={<TestKonva  />} />
-          <Route path="/Team" element={<TeamStatsDashboard></TeamStatsDashboard>}></Route>
-        </Routes>
-    </BrowserRouter>
-      
+      <AuthProvider>
+        <Navbar></Navbar>  
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/demoList" element={<DemoTable />} />
+              <Route path="/advancedStats" element={<AdvancedStats  />} />
+              <Route path="/accountHome" element={
+                <PlayerPage ></PlayerPage>}/>
+              <Route path="/Test" element={<TestKonva  />} />
+              <Route path="/Team" element={<TeamStatsDashboard></TeamStatsDashboard>}></Route>
+            </Routes>
+        </AuthProvider>
+      </BrowserRouter>
     </>
   )
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import styles from './Login.module.css';
+import styles from '../css/Login.module.css';
 
 type Panel = 'login' | 'register';
 

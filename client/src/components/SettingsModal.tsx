@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, type ReactElement } from 'react';
 import '../css/SettingsModal.css';
 import UploadDemoModal from './UploadDemoModal';
+import SeasonsSection from './SeasonsTab';
 
 interface PlayerRole {
   id: string;
@@ -28,6 +29,7 @@ interface RosterMember {
   avatarUrl: string;
   isActive: boolean;
   rosterOrder: number;
+  joinedAt: string;
 }
 
 const RosterSection: React.FC = () => {
@@ -61,7 +63,7 @@ const RosterSection: React.FC = () => {
     });
     dragItem.current = null;
   };
-
+  console.log(members)
   const toggleActive = async (id: string, current: boolean) => {
     setMembers(ms => ms.map(m => m.id === id ? { ...m, isActive: !current } : m));
     await fetch(`http://localhost:4000/api/player/${id}/active`, {
@@ -207,7 +209,8 @@ const saveRole = async (playerId: string) => {
                 className={`settings-nav-btn ${section === s ? 'active' : ''}`}
                 onClick={() => setSection(s)}
               >
-                {s === 'team' ? 'Team Info' : s === 'players' ? 'Player Roles' : 'Files'}
+                {s === 'team' ? 'Team Info' : s === 'players' ? 'Player Roles' : 
+                s === 'files' ? 'Files' : s === 'seasons' ? 'Seasons' : 'Roster'}
               </button>
             ))}
           </div>
@@ -322,6 +325,14 @@ const saveRole = async (playerId: string) => {
                   </div>
                 )}
               </div>
+            )}
+
+            {section === 'roster' && (
+              <RosterSection />
+            )}
+
+            {section === 'seasons' && (
+              <SeasonsSection />
             )}
           </div>
         </div>

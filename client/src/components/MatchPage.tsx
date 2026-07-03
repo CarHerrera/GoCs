@@ -76,49 +76,32 @@ function Overview ({stats}:{stats: Stats[]}){
             </div>
     )
 }
-function AdvancedStats(){
+function MatchPage(){
     const [searchParams] = useSearchParams();
     const [stats, setStats] = useState<Stats[]>([])
+    const [map, setMap] = useState<string>("");
     const [activeTab, setActive] = useState<number>(1)
-    const map = searchParams.get("map")!;
-    const file = searchParams.get("file")!;
-
+    // const map = searchParams.get("map")!;
+    // const file = searchParams.get("file")!;
+    const matchId = searchParams.get("matchId")
     useEffect(() => {
-        let ignore = false;
-        async function getStats(){
-            return fetch(`http://localhost:4000/advancedStats/${file}`, {
-                method: "GET",
-                headers: {
-                    accept:"Application/JSON"
-                }
-            })
-            .then(response => {
-                if(!response.ok){
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            }) .then(data => {
-                return data;
-            })
-        }
-        async function getFetch(){
-            const data = await getStats();
-            if(!ignore){
-                setStats(data)
-                console.log(data)
-            }
-        }
-        getFetch()
-        return () => { ignore = true}
-    }, [file])
+        fetch(`http://localhost:4000/api/match/advancedStats/${matchId}`, { credentials: 'include' })
+          .then(r => r.json())
+          .then((data: { mapName: string; stats: Stats[] }) => { 
+            console.log(data)
+            setStats(data.stats);
+            setMap(data.mapName);
+           })
+          .catch(() => {})
+      }, [matchId]);
 
     let frontPage = (<>Hello</>);
     if (activeTab == 1){
         frontPage = (<Overview stats={stats}></Overview>)
     } else if (activeTab == 4){
-        frontPage = (<DemoPlayback file={file} map={map}></DemoPlayback>)
+        console.log(matchId)
+        frontPage = (<DemoPlayback matchId={Number(matchId) ?? -1} map={map}></DemoPlayback>)
     }
-
     // console.log(searchParams)
     // Add Some Check to see if the demo has been parsed before via a SQL check
     return (<>
@@ -144,4 +127,4 @@ function AdvancedStats(){
     </>)
 }
 
-export default AdvancedStats;  
+export default MatchPage;  

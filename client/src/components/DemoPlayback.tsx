@@ -874,7 +874,7 @@ function RedrawAtTicK(cache:PlayBackCache, tick:number){
         return
     }
 }
-function DemoPlayback({file, map}:{file:String, map:String}){
+function DemoPlayback({matchId, map}:{matchId:number, map:String}){
         const bomb_source = '/equipment/c4.svg'
         const WEAPON_IDS = [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10,       // Pistols
@@ -909,11 +909,12 @@ function DemoPlayback({file, map}:{file:String, map:String}){
         const videoPlaybackLayer = useRef<Konva.Layer>(null)
         const hudLayerRef = useRef<Konva.Layer>(null);
         const videoGroup = useRef<Konva.Group>(null);
-        useEffect(( ) => {
+        useEffect(() => {
             let ignore = false;
             async function getStats(){
-                return fetch(`http://localhost:4000/2DPlayback/${file}-${round}`, {
+                return fetch(`http://localhost:4000/api/match/2DPlayback/${matchId}-${round}`, {
                     method: "GET",
+                    credentials: "include",
                     headers: {
                         accept:"Application/JSON"
                     }
@@ -942,7 +943,7 @@ function DemoPlayback({file, map}:{file:String, map:String}){
                 if (img != null) weaponImageCacheRef.current.set(src, img!)
             })
             return () => { ignore = true}
-        }, [file, round])
+        }, [matchId, round])
         // Handle Responsive Resizing
         useEffect(() => {
 

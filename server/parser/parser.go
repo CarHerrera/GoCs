@@ -115,11 +115,10 @@ func ParseDemoStats(fileName string, MATCHID int) (model.BaseDemo, error) {
 	return infoSend, nil
 }
 
-func Parse2D(filename string) model.MatchEvents {
-
-	var matchid int
+func Parse2D(matchid int) model.MatchEvents {
+	var filename string
 	var matchmap string
-	if err := database.DB.QueryRow("SELECT MATCHID, MAP FROM MATCHES WHERE DEMO_NAME = ?", filename).Scan(&matchid, &matchmap); err != nil {
+	if err := database.DB.QueryRow("SELECT DEMO_NAME, MAP FROM MATCHES WHERE MATCHID = ?", matchid).Scan(&filename, &matchmap); err != nil {
 		panic(err)
 	}
 	file, p, err := setupDemoFile(filename)

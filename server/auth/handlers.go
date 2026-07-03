@@ -278,7 +278,7 @@ func Login(c fiber.Ctx) error {
 		MaxAge:   7 * 24 * 60 * 60,
 	})
 
-	return c.Redirect().Status(303).To("http://localhost:5173/accountHome")
+	return c.Redirect().Status(200).To("http://localhost:5173/accountHome")
 
 }
 

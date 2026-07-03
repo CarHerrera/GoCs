@@ -23,8 +23,15 @@ interface RosterPlayer {
   utilDmg: number;
   current: boolean;
   role: string;
+  avatar: string;
 }
-
+interface Season {
+  id: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  notes: string;
+}
 interface TeamStats {
   tRounds: number;
   ctRounds: number;
@@ -47,6 +54,28 @@ interface RosterRow extends RosterPlayer {
   ratingClass: string;
   bg: string;
 }
+
+const SeasonsOverview: React.FC = () => {
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  useEffect(() => {
+    fetch('http://localhost:4000/api/team/seasons', { credentials: 'include' })
+      .then(r => r.json()).then(setSeasons).catch(() => {});
+  }, []);
+
+  return (
+    <div className="seasons-overview">
+      <div className="roster-label">Seasons</div>
+      <div className="seasons-grid">
+        {seasons.map(s => (
+          <a key={s.id} className="season-card" href={`/season/${s.id}`}>
+            <div className="season-card-name">{s.name}</div>
+            <div className="season-card-dates">{s.startDate} → {s.endDate || 'ongoing'}</div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 type SortKey = keyof RosterPlayer;
 type SortDir = 'asc' | 'desc';
@@ -160,7 +189,6 @@ const TeamTab: React.FC = (): ReactElement => {
 
   if (loading) return <div className="loading">Loading team data...</div>;
   if (!data)   return <div className="loading">No team data found.</div>;
-  console.log(data)
   return (
     <>
       <div className="stat-grid-container">
@@ -193,11 +221,13 @@ const TeamTab: React.FC = (): ReactElement => {
                 <tr key={p.id ?? idx} style={{ backgroundColor: p.bg }}>
                   <td>
                     <div className="player-cell">
-                      <div className="player-avatar">{p.initials}</div>
-                        <div>
-                          <div className="player-info-name">{p.name}</div>
-                          {p.role && <div className="player-info-role">{p.role}</div>}
-                        </div>
+                      {p.avatar
+                        ? <img src={p.avatar} className="player-avatar-img" alt={p.name} />
+                        : <div className="player-avatar">{p.initials}</div>}
+                      <div>
+                        <div className="player-info-name">{p.name}</div>
+                        {p.role && <div className="player-info-role">{p.role}</div>}
+                      </div>
                     </div>
                   </td>
                   <td className="cell-matches">{p.matches}</td>
@@ -225,8 +255,7 @@ const TeamTab: React.FC = (): ReactElement => {
       </div>
 
       <div className="matches-container">
-        <div className="matches-label">Recent Matches</div>
-        <div className="matches-list"></div>
+        <SeasonsOverview></SeasonsOverview>
       </div>
     </>
   );

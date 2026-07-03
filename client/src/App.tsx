@@ -1,5 +1,4 @@
 import DemoTable from './components/demoTables.tsx'
-import AdvancedStats from './components/statInfo.tsx';
 import PlayerPage from './components/PlayerPage.tsx';
 import { useId } from 'react';
 import { BrowserRouter, Link, Routes, Route } from 'react-router-dom';
@@ -8,6 +7,9 @@ import Login from './components/Login.tsx';
 import TeamStatsDashboard from './components/TeamPage.tsx';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
+import SeasonPage from './components/SeasonMatches.tsx';
+import MatchPage from './components/MatchPage.tsx';
+import Whiteboard from './components/Whiteboard.tsx';
 function Home() {
   const fileId = useId();
   return <>
@@ -32,11 +34,13 @@ function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/demoList" element={<DemoTable />} />
-              <Route path="/advancedStats" element={<AdvancedStats  />} />
+              <Route path="/MatchPage" element={<MatchPage  />} />
               <Route path="/accountHome" element={
                 <PlayerPage ></PlayerPage>}/>
               <Route path="/Test" element={<TestKonva  />} />
+              <Route path ="/Whiteboard" element={<Whiteboard></Whiteboard>}></Route>
               <Route path="/Team" element={<TeamStatsDashboard></TeamStatsDashboard>}></Route>
+              <Route path ="/season/:id" element={<SeasonPage></SeasonPage>}/>
             </Routes>
         </AuthProvider>
       </BrowserRouter>

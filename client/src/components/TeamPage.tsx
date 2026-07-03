@@ -1,4 +1,4 @@
-import React, { useState, type ReactElement } from 'react';
+import React, { useState, useEffect, type ReactElement } from 'react';
 import '../css/TeamStatsDashboard.css';
 import TeamTab from './TeamTab';
 import PlayersTab from './PlayersTab';
@@ -8,12 +8,21 @@ import UploadDemoModal from './UploadDemoModal';
 import { useAuth } from '../context/AuthContext';
 
 type TabType = 'Team' | 'Players' | 'Advanced';
-
+interface TeamInfo {
+  teamName: string;
+  playerCount: number;
+  matchCount: number;
+  seasonCount: number;
+}
 const TeamStatsDashboard: React.FC = (): ReactElement => {
   const [tab, setTab] = useState<TabType>('Team');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const { user, loading } = useAuth();
+  const [teamInfo, setTeamInfo] = useState<TeamInfo | null>(null);
+  useEffect(() => {
+  fetch('http://localhost:4000/api/team/info', { credentials: 'include' })
+    .then(r => r.json()).then(setTeamInfo).catch(() => {});
+}, []);
   return (
     <div className="dashboard">
       <div className="dashboard-container">
@@ -21,13 +30,11 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
         <div className="header">
           <div className="header-logo">RV</div>
           <div className="header-info">
-            <h1>{loading ? (
-                ""
-              ) :  user ? (
-                  user.teamName
-              ) : ( "Error"
-
-              ) }</h1>
+            <h1>{teamInfo?.teamName ?? ""}</h1>
+            <span className="header-divider"></span>
+            <span className="header-meta">
+              {teamInfo?.playerCount ?? 0} Players · {teamInfo?.matchCount ?? 0} Matches · {teamInfo?.seasonCount ?? 0} Seasons
+            </span>
             <div className="header-info-subtitle">
               <span className="header-info-text">Counter-Strike 2</span>
             </div>
@@ -67,7 +74,7 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        teamName={user?.teamName ?? ''}
+        teamName={teamInfo?.teamName ?? ''}
       />
     </div>
   );

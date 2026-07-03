@@ -84,7 +84,7 @@ type BaseDemo struct {
 	TeamStats [2]Team `json:"team_stats"`
 	Parsed    bool    `json:"parsed"`
 	BaseStats bool    `json:"stats"`
-	ID        int
+	ID        int64   `json:"matchid"`
 }
 
 type RoundInfo struct {

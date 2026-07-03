@@ -16,5 +16,6 @@ func RegisterRoutes(app *fiber.App) {
 	g.Get("/Logo", Logo)
 	g.Get("/demos", Demos)
 	g.Post("/upload-demo", UploadDemo)
-
+	g.Get("/roster", Roster)
+	g.Get("/seasons", Seasons)
 }

@@ -7,8 +7,9 @@ interface fileInfo{
     savedate: string,
     filesize: number,
     map: string
-    parsed: boolean
-    stats: boolean
+    parsed: boolean;
+    stats: boolean;
+    matchid: number;
 }
 function DemoTable() {
     const [files, setFiles] = useState<fileInfo[]>([]);
@@ -47,6 +48,7 @@ function DemoTable() {
         let parsed = x.parsed
         let stats = x.stats
         let saved = x.savedate
+        let id = x.matchid
         if (file[0] == "\""){
             file = x.filename.substring(1, file.length-1)
         }
@@ -59,10 +61,9 @@ function DemoTable() {
         if (saved[0] == "\""){
             saved = x.savedate.substring(1, saved.length-1)
         }
-        console.log(x)
-        console.log(stats)
+
         return <tr key={i}><td>{file}</td><td>{saved}</td><td>{date}</td><td>{map}</td><td>{stats ? "true" : "false" }</td><td>{parsed ? "true" : "false"}</td>
-        <td><Link to={`/advancedStats?file=${file}&map=${map}`}>Stats</Link></td></tr>
+        <td><Link to={`/MatchPage?matchId=${id}`}>Stats</Link></td></tr>
     })
     return <>
         <div >

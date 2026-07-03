@@ -31,6 +31,7 @@ func Summary(c fiber.Ctx) error {
 		SELECT
 		p.PLAYERID,
         p.PLAYERNAME,
+		COALESCE(p.AVATAR_URL, ''), 
 		COALESCE(p.ROLE, '')                       AS ROLE,
         COALESCE(SUM(ms.TOTAL_KILLS), 0)           AS KILLS,
         COALESCE(SUM(ms.TOTAL_DEATHS), 0)          AS DEATHS,
@@ -94,7 +95,7 @@ func Summary(c fiber.Ctx) error {
 	defer team_players.Close()
 	for team_players.Next() {
 		var playerid int64
-		var name, role string
+		var name, role, avatar string
 		var kills, deaths, assists, app int
 		var totalDamage, headshots int
 		var entryKills, entryDeaths int
@@ -105,7 +106,7 @@ func Summary(c fiber.Ctx) error {
 		var wins, loss int
 
 		if err := team_players.Scan(
-			&playerid, &name, &role,
+			&playerid, &name, &avatar, &role,
 			&kills, &deaths, &assists, &app,
 			&totalDamage, &headshots,
 			&entryKills, &entryDeaths,
@@ -178,6 +179,7 @@ func Summary(c fiber.Ctx) error {
 			"utilDmg":    utilDamage,
 			"flashAsts":  flashAssists,
 			"current":    true,
+			"avatar":     avatar,
 		})
 	}
 
@@ -561,4 +563,88 @@ func Demos(c fiber.Ctx) error {
 		demos = append(demos, d)
 	}
 	return c.JSON(demos)
+}
+
+func Roster(c fiber.Ctx) error {
+	accountID, ok := c.Locals("accountID").(int64)
+	if !ok {
+		return c.Status(401).SendString("Unauthorized")
+	}
+	data, err := auth.GetPlayerPageData(database.DB, accountID)
+	if err != nil || !data.TeamName.Valid {
+		return c.Status(400).JSON(fiber.Map{"error": "No team linked"})
+	}
+	query := `
+		SELECT 
+			tm.PLAYERID,
+			p.PLAYERNAME,
+			tm.IS_ACTIVE,
+			tm.ROSTER_ORDER,
+			tm.JOINED_AT,
+			COALESCE(p.AVATAR_URL, '')
+		FROM TEAM_MEMBERS tm
+		JOIN PLAYERS p ON p.PLAYERID = tm.PLAYERID
+		WHERE tm.TEAMNAME = ?
+		ORDER BY tm.ROSTER_ORDER
+		`
+	rows, err := database.DB.Query(query, data.TeamName.String)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to query roster"})
+	}
+	type RosterMember struct {
+		PlayerId   string `json:"id"`
+		Playername string `json:"name"`
+		IsActive   bool   `json:"isActive"`
+		Order      int    `json:"rosterOrder"`
+		JoinedAt   string `json:"joined_at,string"`
+		Avatar     string `json:"avatarUrl"`
+	}
+	var roster []RosterMember
+	for rows.Next() {
+		var p RosterMember
+		if err := rows.Scan(&p.PlayerId, &p.Playername, &p.IsActive, &p.Order, &p.JoinedAt, &p.Avatar); err != nil {
+			continue
+		}
+		roster = append(roster, p)
+	}
+	defer rows.Close()
+	return c.JSON(roster)
+}
+func Seasons(c fiber.Ctx) error {
+	accountID, ok := c.Locals("accountID").(int64)
+	if !ok {
+		return c.Status(401).SendString("Unauthorized")
+	}
+	data, err := auth.GetPlayerPageData(database.DB, accountID)
+	if err != nil || !data.TeamName.Valid {
+		return c.Status(400).JSON(fiber.Map{"error": "No team linked"})
+	}
+	query := `
+		SELECT SEASON_ID, NAME,
+		START_DATE, END_DATE,
+		COALESCE(NOTES, '')
+		FROM SEASONS
+		WHERE TEAMNAME = ?
+	`
+	rows, err := database.DB.Query(query, data.TeamName.String)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to query seasons"})
+	}
+	type SeasonsResp struct {
+		SeasonId   int    `json:"id"`
+		SeasonName string `json:"name"`
+		StartDate  string `json:"startDate,string"`
+		EndDate    string `json:"endDate,string"`
+		Notes      string `json:"notes"`
+	}
+	var seasons []SeasonsResp
+	for rows.Next() {
+		var s SeasonsResp
+		if err := rows.Scan(&s.SeasonId, &s.SeasonName, &s.StartDate, &s.EndDate, &s.Notes); err != nil {
+			continue
+		}
+		seasons = append(seasons, s)
+	}
+
+	return c.JSON(seasons)
 }

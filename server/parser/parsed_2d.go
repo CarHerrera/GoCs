@@ -14,6 +14,28 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
+// ensureRoundInfo returns ri[round], lazily initializing it (with all its
+// nested maps) on first access. RoundStart/MatchStartedChanged normally seed
+// this ahead of time, but that ordering isn't guaranteed for every round -
+// e.g. a demo that ends mid-round leaves later FrameDone/event handlers
+// firing for a round number that never got a RoundStart. Without this,
+// writing into ri[round].SomeMap[key] on a round that was never seeded
+// panics with "assignment to entry in nil map".
+func ensureRoundInfo(ri map[int]model.RoundInfo, round int) model.RoundInfo {
+	if info, ok := ri[round]; ok {
+		return info
+	}
+	info := model.RoundInfo{
+		PlayerPositions: make(map[int]map[int64]model.PlayerState),
+		PlayerNames:     make(map[int64]model.PlayerInfo),
+		GrenadeEvents:   make(map[int]map[int]model.GrenadeState),
+		FirePositions:   make(map[int]map[int]model.FireState),
+		RoundTimeline:   make(map[int]model.RoundEvent),
+	}
+	ri[round] = info
+	return info
+}
+
 func setUpRoundCycle(p dem.Parser, rt *model.RoundTracker, pe *[]posEntry, ge *[]GrenadeEntry, fe *[]FireEntry, ee *[]EventEntry, ri map[int]model.RoundInfo, Fp map[int][]r2.Point) {
 	p.RegisterEventHandler(func(e events.MatchStartedChanged) {
 		gs := p.GameState()
@@ -52,6 +74,7 @@ func setUpPositionTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]mode
 				return
 			}
 			rounds := *rt.Rounds
+			ensureRoundInfo(ri, rounds)
 			for _, player := range gs.Participants().Playing() {
 				if player.IsAlive() {
 					sqlEntry, playerState := get_pos_entry(player, tick, *rt.Rounds, rt.Matchid, isMoving)
@@ -108,6 +131,7 @@ func setUpFireTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.Ro
 				return
 			}
 			if len(flames) != 0 {
+				ensureRoundInfo(ri, *rt.Rounds)
 				for key, inf := range flames {
 					lastState := Fp[key]
 					if slices.Equal(lastState, inf.Fires().Active().ConvexHull2D()) {
@@ -152,6 +176,7 @@ func setUpFireTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.Ro
 		tick := gs.IngameTick()
 		id := g.Inferno.Entity.ID()
 
+		ensureRoundInfo(ri, *rt.Rounds)
 		if len(ri[*rt.Rounds].FirePositions[tick]) == 0 {
 			ri[*rt.Rounds].FirePositions[tick] = make(map[int]model.FireState)
 		}
@@ -172,6 +197,7 @@ func setUpFireTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.Ro
 		gs := p.GameState()
 		tick := gs.IngameTick()
 		id := g.Inferno.Entity.ID()
+		ensureRoundInfo(ri, *rt.Rounds)
 		if len(ri[*rt.Rounds].FirePositions[tick]) == 0 {
 			ri[*rt.Rounds].FirePositions[tick] = make(map[int]model.FireState)
 		}
@@ -226,6 +252,7 @@ func setUpEntityTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.
 		}
 		sqlEntry1, grenadeState := get_grenade_entry(matchInfo, "PLANTED")
 		*buff = append(*buff, sqlEntry1)
+		ensureRoundInfo(ri, *rt.Rounds)
 		if len(ri[*rt.Rounds].GrenadeEvents[tick]) == 0 {
 			ri[*rt.Rounds].GrenadeEvents[tick] = make(map[int]model.GrenadeState)
 		}
@@ -247,6 +274,7 @@ func setUpEntityTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.
 
 		sqlEntry1, grenadeState := get_grenade_entry(matchInfo, "DEFUSED")
 		*buff = append(*buff, sqlEntry1)
+		ensureRoundInfo(ri, rounds)
 		if len(ri[rounds].GrenadeEvents[tick]) == 0 {
 			ri[rounds].GrenadeEvents[tick] = make(map[int]model.GrenadeState)
 		}
@@ -268,6 +296,7 @@ func setUpEntityTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.
 
 		sqlEntry1, grenadeState := get_grenade_entry(matchInfo, "DROPPED")
 		*buff = append(*buff, sqlEntry1)
+		ensureRoundInfo(ri, rounds)
 		if len(ri[rounds].GrenadeEvents[tick]) == 0 {
 			ri[rounds].GrenadeEvents[tick] = make(map[int]model.GrenadeState)
 		}
@@ -288,6 +317,7 @@ func setUpEntityTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.
 		}
 		sqlEntry, grenadeState := get_grenade_entry(matchInfo, "GRABBED")
 		*buff = append(*buff, sqlEntry)
+		ensureRoundInfo(ri, rounds)
 		if len(ri[rounds].GrenadeEvents[tick]) == 0 {
 			ri[rounds].GrenadeEvents[tick] = make(map[int]model.GrenadeState)
 		}
@@ -306,6 +336,7 @@ func setUpEntityTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.
 		}
 		sqlEntry, gs := get_grenade_entry(matchInfo, "FLYING")
 		*buff = append(*buff, sqlEntry)
+		ensureRoundInfo(ri, *rt.Rounds)
 		if len(ri[*rt.Rounds].GrenadeEvents[tick]) == 0 {
 			ri[*rt.Rounds].GrenadeEvents[tick] = make(map[int]model.GrenadeState)
 		}
@@ -320,6 +351,7 @@ func setUpEntityTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.
 				}
 				sqlEntry, grenadeState := get_grenade_entry(matchInfo, "FLYING")
 				*buff = append(*buff, sqlEntry)
+				ensureRoundInfo(ri, *rt.Rounds)
 				if len(ri[*rt.Rounds].PlayerPositions[upTick]) == 0 {
 					ri[*rt.Rounds].GrenadeEvents[upTick] = make(map[int]model.GrenadeState)
 				}
@@ -341,6 +373,7 @@ func setUpEntityTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.
 		}
 		sqlEntry, grenadeState := get_grenade_entry(matchInfo, "BLOOMED")
 		*buff = append(*buff, sqlEntry)
+		ensureRoundInfo(ri, *rt.Rounds)
 		if len(ri[*rt.Rounds].PlayerPositions[tick]) == 0 {
 			ri[*rt.Rounds].GrenadeEvents[tick] = make(map[int]model.GrenadeState)
 
@@ -361,6 +394,7 @@ func setUpEntityTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.
 		}
 		sqlEntry, grenadeState := get_grenade_entry(matchInfo, "EXPIRED")
 		*buff = append(*buff, sqlEntry)
+		ensureRoundInfo(ri, *rt.Rounds)
 		if len(ri[*rt.Rounds].PlayerPositions[tick]) == 0 {
 			ri[*rt.Rounds].GrenadeEvents[tick] = make(map[int]model.GrenadeState)
 
@@ -381,6 +415,7 @@ func setUpEntityTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.
 		}
 		sqlEntry, grenadeState := get_grenade_entry(matchInfo, "EXPIRED")
 		*buff = append(*buff, sqlEntry)
+		ensureRoundInfo(ri, *rt.Rounds)
 		if len(ri[*rt.Rounds].PlayerPositions[tick]) == 0 {
 			ri[*rt.Rounds].GrenadeEvents[tick] = make(map[int]model.GrenadeState)
 
@@ -401,6 +436,7 @@ func setUpEntityTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.
 		}
 		sqlEntry, grenadeState := get_grenade_entry(matchInfo, "EXPIRED")
 		*buff = append(*buff, sqlEntry)
+		ensureRoundInfo(ri, *rt.Rounds)
 		if len(ri[*rt.Rounds].PlayerPositions[tick]) == 0 {
 			ri[*rt.Rounds].GrenadeEvents[tick] = make(map[int]model.GrenadeState)
 
@@ -429,6 +465,7 @@ func setUpEventTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.R
 			tick: p.GameState().IngameTick(), roundNo: *rt.Rounds, matchid: rt.Matchid, steamid1: id1, steamid2: id2,
 		}
 		ee, re := get_event_entry(b_e, model.PlayerKilled)
+		ensureRoundInfo(ri, *rt.Rounds)
 		ri[*rt.Rounds].RoundTimeline[p.GameState().IngameTick()] = re
 		*buff = append(*buff, ee)
 	})
@@ -439,6 +476,7 @@ func setUpEventTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.R
 				tick: tick, roundNo: *rt.Rounds, matchid: rt.Matchid, steamid1: 0, steamid2: 0,
 			}
 			ee, re := get_event_entry(be, model.FreezeTimeEnd)
+			ensureRoundInfo(ri, *rt.Rounds)
 			ri[*rt.Rounds].RoundTimeline[tick] = re
 			*buff = append(*buff, ee)
 		}
@@ -452,6 +490,7 @@ func setUpEventTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.R
 			tick: tick, roundNo: *rt.Rounds, matchid: rt.Matchid, steamid1: int64(be.Player.SteamID64), steamid2: 0,
 		}
 		ee, re := get_event_entry(b_e, model.BombPlanted)
+		ensureRoundInfo(ri, *rt.Rounds)
 		ri[*rt.Rounds].RoundTimeline[tick] = re
 		*buff = append(*buff, ee)
 	})
@@ -464,6 +503,20 @@ func setUpEventTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.R
 			tick: tick, roundNo: *rt.Rounds, matchid: rt.Matchid, steamid1: int64(be.Player.SteamID64), steamid2: 0,
 		}
 		ee, re := get_event_entry(b_e, model.BombDefused)
+		ensureRoundInfo(ri, *rt.Rounds)
+		ri[*rt.Rounds].RoundTimeline[tick] = re
+		*buff = append(*buff, ee)
+	})
+	p.RegisterEventHandler(func(e events.RoundEnd) {
+		if !*rt.Live || e.Reason != events.RoundEndReasonTargetSaved {
+			return
+		}
+		tick := p.GameState().IngameTick()
+		b_e := base_event{
+			tick: tick, roundNo: *rt.Rounds, matchid: rt.Matchid, steamid1: 0, steamid2: 0,
+		}
+		ee, re := get_event_entry(b_e, model.RoundTimeExpired)
+		ensureRoundInfo(ri, *rt.Rounds)
 		ri[*rt.Rounds].RoundTimeline[tick] = re
 		*buff = append(*buff, ee)
 	})
@@ -490,6 +543,7 @@ func setUpEventTracking(p dem.Parser, rt *model.RoundTracker, ri map[int]model.R
 		case common.EqDecoy:
 			ee, re = get_event_entry(b_e, model.DecoyThrow)
 		}
+		ensureRoundInfo(ri, *rt.Rounds)
 		ri[*rt.Rounds].RoundTimeline[tick] = re
 		*buff = append(*buff, ee)
 	})

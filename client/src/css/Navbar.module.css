@@ -32,6 +32,27 @@
   right: 32px;
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+.logoutBtn {
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid #2e3248;
+  border-radius: 999px;
+  color: #8a8fa8;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.logoutBtn:hover {
+  background: #1c1f2b;
+  border-color: #3a3f58;
+  color: #fff;
 }
 .avatar {
   width: 32px;

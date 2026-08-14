@@ -17,6 +17,8 @@ type TeamRoundStats struct {
 	TPlantWinPct                                        sql.NullFloat64
 	RetakeOpportunities, RetakeWins                     int
 	RetakeSuccessPct                                    sql.NullFloat64
+	GunRounds, GunWins                                  int
+	EliminationWins, BombWins, TimeWins                 int
 }
 
 type PlayerSummariesResult struct {

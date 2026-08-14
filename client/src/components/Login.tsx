@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from '../css/Login.module.css';
+import { useAuth } from '../context/AuthContext';
 
 type Panel = 'login' | 'register';
 
@@ -18,19 +19,11 @@ interface RegisterForm {
 
 export default function Login() {
   const navigate = useNavigate();
+  const { refreshUser } = useAuth();
   const [panel, setPanel] = useState<Panel>('login');
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
 
-  const getCookies = (name:string) => {
-      console.log(document.cookie)
-      if (document.cookie == ""){
-        return false
-      } else {
-        const value = document.cookie.split("=")[1]
-        return value
-      }
-  }
   const [loginForm, setLoginForm] = useState<LoginForm>({
     email: '',
     password: '',
@@ -60,6 +53,7 @@ export default function Login() {
         setError(msg || 'Invalid username or password');
         return;
       }
+      await refreshUser();
       navigate('/accountHome');
     } catch {
       setError('Could not reach the server. Try again later.');
@@ -95,6 +89,7 @@ export default function Login() {
         setError(msg || 'Registration failed');
         return;
       }
+      await refreshUser();
       navigate('/accountHome');
     } catch {
       setError('Could not reach the server. Try again later.');
@@ -103,34 +98,6 @@ export default function Login() {
     }
   }
 
-  // ── Guest ────────────────────────────────────────────────────────────────
-  async function handleGuest() {
-    setError('');
-    setLoading(true);
-    try {
-      const res = await fetch('http://localhost:4000/auth/guest', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!res.ok) {
-        setError('Could not start guest session');
-        return;
-      }
-      navigate('/demo');
-    } catch {
-      setError('Could not reach the server. Try again later.');
-    } finally {
-      setLoading(false);
-    }
-  }
-  useEffect(() => {
-    const new_account = getCookies("new_account")
-    if (new_account){
-      setPanel('register')
-    } else {
-      setPanel('login')
-    }
-  },[])
   return (
     <div className={styles.page}>
       <div className={styles.viewport}>
@@ -179,15 +146,8 @@ export default function Login() {
                     <button className={styles.primaryBtn} type="submit" disabled={loading}>
                         {loading ? 'Signing in...' : 'Sign in'}
                     </button>
-                    <button className={styles.guestBtn} onClick={handleGuest} disabled={loading}>
-                        Continue as Guest
-                    </button>
                     </div>
-                
               </form>
-
-              {/* Guest */}
-              
 
               <p className={styles.switchText}>
                 Don't have an account?{' '}

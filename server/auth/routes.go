@@ -8,4 +8,5 @@ func RegisterRoutes(app *fiber.App) {
 	app.Get("/auth/steam/callback", SteamCallback)
 	app.Post("/auth/register", Register)
 	app.Post("/auth/login", Login)
+	app.Post("/auth/logout", Logout)
 }

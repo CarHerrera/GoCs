@@ -23,9 +23,9 @@ func Matches(c fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "invalid season id"})
 	}
 	query := `
-	SELECT 
-		m.MATCHID, m.MAP, m.TEAM_A_NAME, m.TEAM_A_FINAL_SCORE,
-		m.TEAM_B_NAME, m.TEAM_B_FINAL_SCORE, m.MATCH_DATE,
+	SELECT
+		m.MATCHID, m.MAP, COALESCE(m.TEAM_A_NAME, ''), m.TEAM_A_FINAL_SCORE,
+		COALESCE(m.TEAM_B_NAME, ''), m.TEAM_B_FINAL_SCORE, COALESCE(m.MATCH_DATE, ''),
 		s.NAME AS SEASON_NAME
 	FROM MATCHES m
 	JOIN SEASONS s ON s.SEASON_ID = m.SEASON_ID
@@ -40,13 +40,13 @@ func Matches(c fiber.Ctx) error {
 		TeamAScore int    `json:"scoreA"`
 		TeamB      string `json:"teamB"`
 		TeamBScore int    `json:"scoreB"`
-		Date       string `json:"date,string"`
+		Date       string `json:"date"`
 		SeasonName string
 	}
 	fmt.Printf("Season ID : %v", seasonId)
 	rows, err := database.DB.Query(query, seasonId)
 	if err != nil {
-		fmt.Printf("Error %v")
+		fmt.Printf("Error %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "invalid season id"})
 	}
 	var matches []SeasonMatch

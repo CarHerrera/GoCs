@@ -19,10 +19,11 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [teamInfo, setTeamInfo] = useState<TeamInfo | null>(null);
-  useEffect(() => {
-  fetch('http://localhost:4000/api/team/info', { credentials: 'include' })
-    .then(r => r.json()).then(setTeamInfo).catch(() => {});
-}, []);
+  const fetchTeamInfo = () => {
+    fetch('http://localhost:4000/api/team/info', { credentials: 'include' })
+      .then(r => r.json()).then(setTeamInfo).catch(() => {});
+  };
+  useEffect(() => { fetchTeamInfo(); }, []);
   return (
     <div className="dashboard">
       <div className="dashboard-container">
@@ -75,6 +76,7 @@ const TeamStatsDashboard: React.FC = (): ReactElement => {
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         teamName={teamInfo?.teamName ?? ''}
+        onRenamed={fetchTeamInfo}
       />
     </div>
   );

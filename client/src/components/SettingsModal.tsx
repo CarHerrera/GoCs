@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, type ReactElement } from 'react';
 import '../css/SettingsModal.css';
 import UploadDemoModal from './UploadDemoModal';
 import SeasonsSection from './SeasonsTab';
+import UnassignedSection from './UnassignedTab';
 
 interface PlayerRole {
   id: string;
@@ -21,6 +22,7 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   teamName: string;
+  onRenamed?: () => void;
 }
 
 interface RosterMember {
@@ -121,9 +123,9 @@ const RosterSection: React.FC = () => {
     </div>
   );
 };
-type Section = 'team' | 'roster' | 'players' | 'seasons' | 'files';
+type Section = 'team' | 'roster' | 'players' | 'seasons' | 'files' | 'unassigned';
 
-const SettingsModal: React.FC<Props> = ({ isOpen, onClose, teamName }): ReactElement => {
+const SettingsModal: React.FC<Props> = ({ isOpen, onClose, teamName, onRenamed }): ReactElement => {
   const [section, setSection] = useState<Section>('team');
   const [players, setPlayers] = useState<PlayerRole[]>([]);
   const [roles, setRoles] = useState<Record<string, string>>({});
@@ -133,6 +135,35 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, teamName }): ReactEle
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [nameInput, setNameInput] = useState(teamName);
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState('');
+
+  useEffect(() => { setNameInput(teamName); }, [teamName]);
+
+  const saveTeamName = async () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed || trimmed === teamName) return;
+    setRenaming(true);
+    setRenameError('');
+    try {
+      const res = await fetch('http://localhost:4000/api/team/rename', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newName: trimmed }),
+      });
+      if (!res.ok) {
+        setRenameError(await res.text() || 'Failed to rename team');
+        return;
+      }
+      onRenamed?.();
+    } catch {
+      setRenameError('Could not reach the server. Try again later.');
+    } finally {
+      setRenaming(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen || section !== 'players') return;
@@ -203,14 +234,15 @@ const saveRole = async (playerId: string) => {
           </div>
 
           <div className="settings-nav">
-            {(['team', 'roster', 'players', 'seasons', 'files'] as Section[]).map(s => (
+            {(['team', 'roster', 'players', 'seasons', 'files', 'unassigned'] as Section[]).map(s => (
               <button
                 key={s}
                 className={`settings-nav-btn ${section === s ? 'active' : ''}`}
                 onClick={() => setSection(s)}
               >
-                {s === 'team' ? 'Team Info' : s === 'players' ? 'Player Roles' : 
-                s === 'files' ? 'Files' : s === 'seasons' ? 'Seasons' : 'Roster'}
+                {s === 'team' ? 'Team Info' : s === 'players' ? 'Player Roles' :
+                s === 'files' ? 'Files' : s === 'seasons' ? 'Seasons' :
+                s === 'unassigned' ? 'Unassigned' : 'Roster'}
               </button>
             ))}
           </div>
@@ -220,12 +252,28 @@ const saveRole = async (playerId: string) => {
               <div className="settings-section">
                 <div className="settings-field">
                   <label>Team Name</label>
-                  <input
-                    className="settings-input"
-                    value={teamName}
-                    readOnly
-                  />
-                  <span className="settings-hint">Team name is derived from your match data</span>
+                  <div className="settings-invite-row">
+                    <input
+                      className="settings-input"
+                      value={nameInput}
+                      onChange={e => { setNameInput(e.target.value); setRenameError(''); }}
+                      onKeyDown={e => { if (e.key === 'Enter') saveTeamName(); }}
+                    />
+                    <button
+                      className="settings-save-btn"
+                      onClick={saveTeamName}
+                      disabled={renaming || !nameInput.trim() || nameInput.trim() === teamName}
+                    >
+                      {renaming ? '…' : 'Save'}
+                    </button>
+                  </div>
+                  {renameError ? (
+                    <span className="settings-hint" style={{ color: '#e25563' }}>{renameError}</span>
+                  ) : (
+                    <span className="settings-hint">
+                      Renaming updates every match, season, and roster record that references this team.
+                    </span>
+                  )}
                 </div>
 
                 <div className="settings-field">
@@ -333,6 +381,10 @@ const saveRole = async (playerId: string) => {
 
             {section === 'seasons' && (
               <SeasonsSection />
+            )}
+
+            {section === 'unassigned' && (
+              <UnassignedSection />
             )}
           </div>
         </div>

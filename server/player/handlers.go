@@ -59,10 +59,13 @@ func MeStats(c fiber.Ctx) error {
 	}
 
 	if !data.SteamID.Valid {
-		return c.Status(400).SendString("No Steam account linked")
+		return c.JSON(fiber.Map{
+			"steamLinked": false,
+			"hasMatches":  false,
+		})
 	}
 
-	response := fiber.Map{}
+	response := fiber.Map{"steamLinked": true}
 
 	var kd float64
 	query := `

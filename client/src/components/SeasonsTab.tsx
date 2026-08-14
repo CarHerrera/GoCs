@@ -32,7 +32,7 @@ const SeasonsSection: React.FC = () => {
 
   const saveEdit = async (id: number) => {
     const season = seasons.find(s => s.id === id)!;
-    await fetch(`http://localhost:4000/api/seasons/${id}`, {
+    await fetch(`http://localhost:4000/api/team/seasons/${id}`, {
       method: 'PUT', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(season),

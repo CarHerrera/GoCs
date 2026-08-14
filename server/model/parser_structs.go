@@ -21,6 +21,11 @@ type Team struct {
 	CTScore        int              `json:"CTScore"`
 	PlayingPlayers map[int64]Player `json:"Playing"`
 	Inited         bool
+	// IsDefaultName is true when the demo itself had no clan tag set for
+	// this side and ClanName was substituted with a generic fallback
+	// ("Team 1"/"Team 2") — a signal that this name shouldn't be trusted
+	// as a real team identity when writing MATCH_STATS.
+	IsDefaultName bool
 }
 type Player struct {
 	Name  string      `json:"name"`
@@ -28,28 +33,31 @@ type Player struct {
 	Stats PlayerStats `json:"stats"`
 }
 type PlayerStats struct {
-	Kills          int `json:"kills"`
-	HeadshotKills  int `json:"hs"`
-	EntryKills     int `json:"entry_kills"`
-	EntryDeaths    int `json:"entry_deaths"`
-	Deaths         int `json:"deaths"`
-	Assists        int `json:"assists"`
-	Damage         int `json:"dmg"`
-	UtilityDamage  int `json:"ud"`
-	OneFragCount   int `json:"1k"`
-	TwoFrags       int `json:"2k"`
-	ThreeFrags     int `json:"3k"`
-	FourFrags      int `json:"4k"`
-	FiveFrags      int `json:"5k"`
-	TradedDeaths   int `json:"traded_deaths"`
-	TradeKills     int `json:"trade_kills"`
-	ClutchesWon    int `json:"clutch_win"`
-	ClutchCount    int `json:"clutch_count"`
-	FlashAssists   int `json:"flash_assists"`
-	TeamFlashed    int `json:"team_flashes"`
-	EnemiesFlashed int `json:"enemies_flashed"`
-	HEDamage       int `json:"he_damage"`
-	FireDamage     int `json:"fire_damage"`
+	Kills          int     `json:"kills"`
+	HeadshotKills  int     `json:"hs"`
+	EntryKills     int     `json:"entry_kills"`
+	EntryDeaths    int     `json:"entry_deaths"`
+	Deaths         int     `json:"deaths"`
+	Assists        int     `json:"assists"`
+	Damage         int     `json:"dmg"`
+	UtilityDamage  int     `json:"ud"`
+	OneFragCount   int     `json:"1k"`
+	TwoFrags       int     `json:"2k"`
+	ThreeFrags     int     `json:"3k"`
+	FourFrags      int     `json:"4k"`
+	FiveFrags      int     `json:"5k"`
+	TradedDeaths   int     `json:"traded_deaths"`
+	TradeKills     int     `json:"trade_kills"`
+	ClutchesWon    int     `json:"clutch_win"`
+	ClutchCount    int     `json:"clutch_count"`
+	FlashAssists   int     `json:"flash_assists"`
+	TeamFlashed    int     `json:"team_flashes"`
+	EnemiesFlashed int     `json:"enemies_flashed"`
+	HEDamage       int     `json:"he_damage"`
+	FireDamage     int     `json:"fire_damage"`
+	ADR            float64 `json:"adr"`
+	KAST           float64 `json:"kast"`
+	Rating         float64 `json:"rating"`
 }
 
 type MatchEvents struct {
@@ -66,21 +74,28 @@ type SQLMatch struct {
 	PARSED_2D    int
 }
 type RoundTracker struct {
-	Teams      *[2]Team
-	Live       *bool
-	FirstKill  *bool
-	LRTH       bool
-	Catch      bool
-	Matchid    int
-	Rounds     *int
-	RoundCycle int
+	Teams         *[2]Team
+	Live          *bool
+	FirstKill     *bool
+	LRTH          bool
+	Catch         bool
+	Matchid       int
+	Rounds        *int
+	RoundCycle    int
+	FreezeEndTick int
+	// PlayerTeamIdx pins each player's roster (0/1) index the first time
+	// they're classified. Roster membership never changes mid-match, so
+	// this is looked up instead of re-deriving from live TeamState, which
+	// can already reflect the next half's side assignment for a beat
+	// around the last round of a half, before it's official.
+	PlayerTeamIdx map[int64]int
 }
 type BaseDemo struct {
-	FileName  string  `json:"filename,string"`
-	ModDate   string  `json:"date,string"`
-	SavedDate string  `json:"savedate,string"`
-	FileSize  string  `json:"filesize,string"`
-	Map       string  `json:"map,string"`
+	FileName  string  `json:"filename"`
+	ModDate   string  `json:"date"`
+	SavedDate string  `json:"savedate"`
+	FileSize  string  `json:"filesize"`
+	Map       string  `json:"map"`
 	TeamStats [2]Team `json:"team_stats"`
 	Parsed    bool    `json:"parsed"`
 	BaseStats bool    `json:"stats"`
@@ -114,6 +129,10 @@ const (
 	FlashThrow
 	HeThrow
 	DecoyThrow
+	// RoundTimeExpired marks a round ending via RoundEndReasonTargetSaved -
+	// the clock ran out before the bomb was planted. Kept last so existing
+	// TrackedEvents values (already persisted in ROUND_EVENTS) don't shift.
+	RoundTimeExpired
 )
 
 type PlayerInfo struct {

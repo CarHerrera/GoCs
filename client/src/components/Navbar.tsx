@@ -1,9 +1,25 @@
 import { Link, useNavigate } from 'react-router-dom';
+import Cookies from 'js-cookie';
 import styles from '../css/Navbar.module.css';
 import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
-  const { user, loading } = useAuth();
+  const { user, loading, refreshUser } = useAuth();
+  const navigate = useNavigate();
+
+  async function handleLogout() {
+    try {
+      await fetch('http://localhost:4000/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } finally {
+      Cookies.remove('steamLinked');
+      await refreshUser();
+      navigate('/');
+    }
+  }
+
   return (
     <nav className={styles.navbar}>
       <div className={styles.navLinks}>
@@ -16,9 +32,14 @@ export default function Navbar() {
           {loading ? (
             <div className={styles.avatarSkeleton} />
           ) : user ? (
-            <Link to={`/player/me`} className={styles.avatarLink}>
-              <img src={user.profilePic} alt={user.playerName} className={styles.avatar} />
-            </Link>
+            <>
+              <Link to={`/player/me`} className={styles.avatarLink}>
+                <img src={user.profilePic} alt={user.playerName} className={styles.avatar} />
+              </Link>
+              <button className={styles.logoutBtn} onClick={handleLogout}>
+                Log out
+              </button>
+            </>
           ) : (
             <a href="http://localhost:4000/auth/steam" className={styles.navSteamBtn}>
                 <svg className={styles.navSteamIcon} viewBox="0 0 496 512" fill="currentColor">

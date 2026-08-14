@@ -16,10 +16,29 @@ interface Economy {
   ecoPct: number;
   forcePct: number;
   fullPct: number;
+  gunPct: number;
+  antiEcoPct: number;
+}
+
+interface BombRetakes {
+  plants: number;
+  plantWins: number;
+  plantWinPct: number;
+  retakeOpportunities: number;
+  retakeWins: number;
+  retakeWinPct: number;
+}
+
+interface WinConditions {
+  eliminationPct: number;
+  bombPct: number;
+  timePct: number;
 }
 
 interface AdvancedResponse {
   economy: Economy;
+  bombRetakes: BombRetakes;
+  winConditions: WinConditions;
   maps: MapStat[];
 }
 
@@ -65,6 +84,29 @@ const AdvancedTab: React.FC = (): ReactElement => {
       createStatCol('Eco Conv %', `${e.ecoPct}%`, 3, false),
       createStatCol('Force-Buy %', `${e.forcePct}%`, 4, false),
       createStatCol('Full-Buy %', `${e.fullPct}%`, 5, false),
+      createStatCol('Gun Round Win %', `${e.gunPct}%`, 6, true),
+      createStatCol('Anti-Eco Win %', `${e.antiEcoPct}%`, 7, false),
+    ];
+  }, [data]);
+
+  const bombRetakeStats: StatColumn[] = useMemo(() => {
+    if (!data) return [];
+    const b = data.bombRetakes;
+    return [
+      createStatCol('Bomb Plants', b.plants, 0, false),
+      createStatCol('Plant Win %', `${b.plantWinPct}%`, 1, true),
+      createStatCol('Retake Attempts', b.retakeOpportunities, 2, false),
+      createStatCol('Retake Win %', `${b.retakeWinPct}%`, 3, true),
+    ];
+  }, [data]);
+
+  const winConditionStats: StatColumn[] = useMemo(() => {
+    if (!data) return [];
+    const w = data.winConditions;
+    return [
+      createStatCol('By Elimination', `${w.eliminationPct}%`, 0, false),
+      createStatCol('By Bomb', `${w.bombPct}%`, 1, false),
+      createStatCol('By Time Expiring', `${w.timePct}%`, 2, false),
     ];
   }, [data]);
 
@@ -87,6 +129,16 @@ const AdvancedTab: React.FC = (): ReactElement => {
       <div className="stat-grid-container">
         <div className="stat-grid-label">Round Economy</div>
         <StatGrid stats={economyStats} />
+      </div>
+
+      <div className="stat-grid-container">
+        <div className="stat-grid-label">Bomb Plants &amp; Retakes</div>
+        <StatGrid stats={bombRetakeStats} />
+      </div>
+
+      <div className="stat-grid-container">
+        <div className="stat-grid-label">How Rounds Are Won</div>
+        <StatGrid stats={winConditionStats} />
       </div>
 
       <div className="roster-container">

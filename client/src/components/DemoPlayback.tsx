@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from "react";
-import { Layer, Stage, Text, Circle, Group, Rect, Image, Wedge} from 'react-konva';
+import { useEffect, useState, useRef, useMemo } from "react";
+import { Layer, Stage, Text, Circle, Group, Rect, Image, Wedge, Arc} from 'react-konva';
 import { URLImage } from "../URLImage";
 import Konva from "konva";
 import useImage from "use-image";
@@ -22,6 +22,7 @@ const TrackedEvent = {
 	FlashThrow: 7,
 	HeThrow: 8,
 	DecoyThrow: 9,
+	RoundTimeExpired: 10,
 } as const;
 type TrackedEvent = typeof TrackedEvent[keyof typeof TrackedEvent];
 interface PlayerState {
@@ -64,6 +65,10 @@ interface PlayerInformation {
 interface MapCoordinate  {
     X: number;
     Y: number;
+}
+interface RoundResult {
+    roundNo: number;
+    winningSide?: "T" | "CT";
 }
 interface MatchEvents {
     round_events: RoundInfo;
@@ -189,6 +194,7 @@ interface PlayerBox {
     tpad: number
     lpad: number
     i: number
+    side: number
     name: string
     playerid: string
     ps: PlayerState
@@ -242,23 +248,17 @@ function WeaponIcon({src, ...rest}: WeaponIconProps){
 }
 function playerBoxInfo({playerBox, hud, cache}:{playerBox:PlayerBox, hud: Map<string, Konva.Group>, cache:Map<string, PlayerHudCache>}){
     let color ="white"
-    const {width, height, tpad, lpad, i, name, playerid, ps} = playerBox
+    const {width, height, tpad, lpad, i, side, name, playerid, ps} = playerBox
     
-    switch (i){
-        case 0:
-            color="green"
-        break;
-        case 1:
-            color="blue"
-        break;
+    switch (side){ 
         case 2:
-            color="purple"
+            color="orange"
         break;
         case 3:
-            color="black"
+            color="blue"
         break;
         case 4:
-            color="orange"
+            color="black"
         break;
         
     }
@@ -874,6 +874,37 @@ function RedrawAtTicK(cache:PlayBackCache, tick:number){
         return
     }
 }
+function pctFor(tick: number, min: number, max: number): number {
+    return Math.min(100, Math.max(0, ((tick - min) / (max - min)) * 100));
+}
+
+function pipClass(event: TrackedEvent): string {
+    switch (event) {
+        case TrackedEvent.PlayerKilled: return "kill";
+        case TrackedEvent.BombPlanted: return "plant";
+        case TrackedEvent.BombDefused: return "defuse";
+        case TrackedEvent.RoundTimeExpired: return "expired";
+        default: return "util";
+    }
+}
+
+
+function eventLabel(e: RoundEvent, playerInfo: Map<string, PlayerInformation>): string {
+    const p1 = playerInfo.get(e.player1)?.name ?? "?";
+    const p2 = playerInfo.get(e.player2)?.name ?? "?";
+    switch (e.events) {
+        case TrackedEvent.PlayerKilled:  return `${p1} killed ${p2}`;
+        case TrackedEvent.BombPlanted:   return `${p1} planted`;
+        case TrackedEvent.BombDefused:   return `${p1} defused`;
+        case TrackedEvent.FreezeTimeEnd: return "Freeze time ended";
+        case TrackedEvent.SmokeThrow:    return `${p1} smoke`;
+        case TrackedEvent.FlashThrow:    return `${p1} flash`;
+        case TrackedEvent.HeThrow:       return `${p1} HE`;
+        case TrackedEvent.FireThrow:     return `${p1} molotov`;
+        case TrackedEvent.RoundTimeExpired: return "Round timer expired — bomb not planted";
+        default: return "";
+    }
+}
 function DemoPlayback({matchId, map}:{matchId:number, map:String}){
         const bomb_source = '/equipment/c4.svg'
         const WEAPON_IDS = [
@@ -884,8 +915,15 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
             401, 404, 405,                       // Zeus, Bomb, Knife
             501, 502, 503, 504, 505, 506         // Grenades
         ];
+        const [drawerView, setDrawerView] = useState<'events'|'notes'|null>(null);
         const [bombSvg] = useImage(bomb_source);
         const [stats, setStats] = useState<MatchEvents>()
+        // Real roster/clan team names for this match, resolved server-side
+        // the same way for both the stats tab and 2D playback (see
+        // seedMatchTeams in server/parser/parser.go) so they stay correct
+        // even across a halftime side swap.
+        const teamNames = useMemo(() => Object.keys(stats?.teams ?? {}), [stats]);
+        const [roundResults, setRoundResults] = useState<Map<number, RoundResult>>(new Map())
         const [size, setSize] = useState({ width: 0, height: 0 });
         const [stageDim, setStageDim] = useState({ width: 0, height: 0 });
         const [round, setRound] =useState(1);
@@ -901,14 +939,31 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
         const tickRef = useRef(isPlaying.tick_no);
         const hudRef = useRef<Map<string, Konva.Group>>(new Map());
         const hudCacheRef = useRef<Map<string, PlayerHudCache>>(new Map());
-        
+        const timerRef = useRef<{ring?: Konva.Arc, fill?:Konva.Arc, text?: Konva.Text, label?: Konva.Text}>({});
         const fullPlaybacRef = useRef<PlayBackCache>(null)
         const progressRef = useRef<HTMLInputElement>(null);
+        const playheadRef = useRef<HTMLInputElement>(null);
         // ROUND NO -> TICK NO -> PLAYBACK REF
         const playbackRef = useRef<PlayBackRef>(null);
         const videoPlaybackLayer = useRef<Konva.Layer>(null)
         const hudLayerRef = useRef<Konva.Layer>(null);
         const videoGroup = useRef<Konva.Group>(null);
+        function syncTick(tick: number, opts?: { pause?: boolean }) {
+            tickRef.current = tick;
+            if (progressRef.current) {
+                progressRef.current.value = tick.toString();
+            }
+            if (playheadRef.current) {
+                const pct = pctFor(tick, round_begin_ticks.current[0], round_begin_ticks.current[1]);
+                playheadRef.current.style.left = `${pct}%`;
+            }
+            if (fullPlaybacRef.current) {
+                RedrawAtTicK(fullPlaybacRef.current, tick);
+            }
+            if (opts?.pause) {
+                setPlaying(prev => ({ ...prev, tick_no: tick, playing: false }));
+            }
+        }
         useEffect(() => {
             let ignore = false;
             async function getStats(){
@@ -944,6 +999,19 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
             })
             return () => { ignore = true}
         }, [matchId, round])
+        useEffect(() => {
+            let ignore = false;
+            fetch(`http://localhost:4000/api/match/roundResults/${matchId}`, { credentials: 'include' })
+                .then(r => r.json())
+                .then((data: { rounds: RoundResult[] }) => {
+                    if (ignore) return;
+                    const byRound = new Map<number, RoundResult>();
+                    (data.rounds ?? []).forEach(r => byRound.set(r.roundNo, r));
+                    setRoundResults(byRound);
+                })
+                .catch(() => {});
+            return () => { ignore = true }
+        }, [matchId])
         // Handle Responsive Resizing
         useEffect(() => {
 
@@ -1562,66 +1630,76 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
     return <>
         <div id="playbackGrid" >
             
-            <div className="options">
-                <ul style={{border:"solid"}}>
-                    <li>Round Events</li>
-                    <li>Notes</li>
-                    <li>Drawing mode</li>
-                    <li>Settings</li>
-                </ul>
-            <div>
-                    <ol>
+
+            <div className="rail">
+                <button className={drawerView==='events'?'active':''} onClick={() => setDrawerView(v => v==='events'?null:'events')}>☰</button>
+                <button className={drawerView==='notes'?'active':''} onClick={() => setDrawerView(v => v==='notes'?null:'notes')}>✎</button>
+                <div className="divider"></div>
+                <button title="Drawing mode">✏</button>
+                <button title="Settings">⚙</button>
+                {drawerView && (
+                <div className="drawer">
+                    {drawerView === 'events'
+                    ? (
+                        <ol>
                         {
                             isPlaying.ready && 
-                                Array.from(playbackRef.current!.round_timeline.entries()).map(([tick, re], i)=>{
-                                    const player1 = playbackRef.current!.player_info.get(re.player1)
-                                    const player2 = playbackRef.current!.player_info.get(re.player2)
-                                    let msg = ""
-                                    switch(re.events){
-                                        case TrackedEvent.FreezeTimeEnd:
-                                            msg += `Freeze time ended at ${tick}`
-                                            break
-                                        case TrackedEvent.PlayerKilled:
-                                            msg += `${player1?.name} killed ${player2?.name} at ${tick}`
-                                            break
-                                        case TrackedEvent.BombPlanted:
-                                            msg += `${player1?.name} Planted the bomb at ${tick}`
-                                            break
-                                        case TrackedEvent.BombDefused:
-                                            msg += `${player1?.name} defused the bomb at ${tick}`
-                                            break
-                                        case TrackedEvent.SmokeThrow:
-                                            msg += `${player1?.name} threw a smoke ${tick}`
-                                            break
-                                        case TrackedEvent.FlashThrow:
-                                            msg += `${player1?.name} threw a flash ${tick}`
-                                            break
-                                        case TrackedEvent.HeThrow:
-                                            msg += `${player1?.name} threw an HE ${tick}`
-                                            break
-                                        case TrackedEvent.FireThrow:
-                                            msg += `${player1?.name} threw a fire grenade ${tick}`
-                                            break
-                                        default:
-                                            msg += `Nothing`
-                                            break
-                                    }
-                                    return <li key={i} onClick={() => {
-                                        if (fullPlaybacRef.current) {
-                                            tickRef.current =  tick
-                                            
-                                            if (progressRef.current) {
-                                                progressRef.current.value = tick.toString()
-                                            }
-                                            RedrawAtTicK(fullPlaybacRef.current, tick)
-                                            // setPlaying((prev) => ({ ...prev, tick_no: target, playing:false}));
+                                    Array.from(playbackRef.current!.round_timeline.entries()).map(([tick, re], i)=>{
+                                        const player1 = playbackRef.current!.player_info.get(re.player1)
+                                        const player2 = playbackRef.current!.player_info.get(re.player2)
+                                        let msg = ""
+                                        switch(re.events){
+                                            case TrackedEvent.FreezeTimeEnd:
+                                                msg += `Freeze time ended at ${tick}`
+                                                break
+                                            case TrackedEvent.PlayerKilled:
+                                                msg += `${player1?.name} killed ${player2?.name} at ${tick}`
+                                                break
+                                            case TrackedEvent.BombPlanted:
+                                                msg += `${player1?.name} Planted the bomb at ${tick}`
+                                                break
+                                            case TrackedEvent.BombDefused:
+                                                msg += `${player1?.name} defused the bomb at ${tick}`
+                                                break
+                                            case TrackedEvent.SmokeThrow:
+                                                msg += `${player1?.name} threw a smoke ${tick}`
+                                                break
+                                            case TrackedEvent.FlashThrow:
+                                                msg += `${player1?.name} threw a flash ${tick}`
+                                                break
+                                            case TrackedEvent.HeThrow:
+                                                msg += `${player1?.name} threw an HE ${tick}`
+                                                break
+                                            case TrackedEvent.FireThrow:
+                                                msg += `${player1?.name} threw a fire grenade ${tick}`
+                                                break
+                                            case TrackedEvent.RoundTimeExpired:
+                                                msg += `Round timer expired — bomb not planted at ${tick}`
+                                                break
+                                            default:
+                                                msg += `Nothing`
+                                                break
                                         }
-                                    }}> {msg} </li>
-                                })
-                        }
-                    </ol>
+                                        return <li key={i} onClick={() => {
+                                            if (fullPlaybacRef.current) {
+                                                tickRef.current =  tick
+                                                
+                                                if (progressRef.current) {
+                                                    progressRef.current.value = tick.toString()
+                                                }
+                                                RedrawAtTicK(fullPlaybacRef.current, tick)
+                                                // setPlaying((prev) => ({ ...prev, tick_no: target, playing:false}));
+                                            }
+                                        }}> {msg} </li>
+                                    })
+                            }
+                        </ol>
+                    )
+                    : <textarea placeholder={`Notes for round ${round}`} />}
                 </div>
+                )}
             </div>
+                
             <div id="playbackMap" ref={playbackContainer}>
                 <Stage  width={stageDim.width} height={stageDim.height}>
                     <Layer ref={videoPlaybackLayer}   >
@@ -1682,6 +1760,7 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
                                 } 
                         </Group>              
                     </Layer>
+                    
                     <Layer ref={hudLayerRef}>
                         <Group x={0} >
                             {   playbackRef.current &&
@@ -1689,10 +1768,10 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
                                     const info = playbackRef.current!.player_info.get(playerid)!
                                     const side = info.side
                                     return side != 2
-                                }).map(([playerid,ps], i) => {
+                                }).map(([playerid, ps], i) => {
                                     const name = playbackRef.current!.player_info.get(playerid)!.name
                                     const info:PlayerBox = {
-                                        width:freeSpace, height:size.height/10, tpad:10, lpad:10, i:i, name:name, ps:ps, playerid:playerid
+                                        width:freeSpace, height:size.height/10,i:i, side:3, tpad:10, lpad:10, name:name, ps:ps, playerid:playerid
                                     }
                                     return playerBoxInfo({playerBox:info, hud:hudRef.current, cache:hudCacheRef.current})
                                 })
@@ -1707,14 +1786,26 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
                                 }).map(([playerid, ps], i) => {
                                     const name = playbackRef.current!.player_info.get(playerid)!.name
                                     const info:PlayerBox = {
-                                        width:freeSpace, height:size.height/10, tpad:10, lpad:10, i:i, name:name, playerid:playerid, ps:ps
+                                        width:freeSpace, height:size.height/10,i:i, side:2, tpad:10, lpad:10, name:name, playerid:playerid, ps:ps
                                     }
                                     return playerBoxInfo({playerBox:info, hud:hudRef.current, cache:hudCacheRef.current})
                                 })
                             }
                         </Group>
                     </Layer>
-                    
+                    <Layer>
+                        <Group x={stageDim.width-(freeSpace *1.5)} y={50}>
+                            <Arc ref={(n) => { if(n) timerRef.current.ring = n }}
+                                innerRadius={34} outerRadius={39}
+                                angle={360} rotation={-90} fill="#1B222A" />
+                            <Arc ref={(n) => { if(n) timerRef.current.fill = n }}
+                                innerRadius={34} outerRadius={39}
+                                angle={0} rotation={-90} fill="#4C86C9" />
+                            <Text ref={(n) => { if(n) timerRef.current.text = n }}
+                                text="0:00" fontSize={16} fill="#E7EAEE"
+                                x={-39} y={-5} width={90} align="center" />
+                        </Group>
+                    </Layer>
                 </Stage>
             </div>
             
@@ -1747,7 +1838,7 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
                     console.log(tickRef.current)
                     }}>forward</button>
             </div>
-            <div className="progress">
+            {/* <div className="progress">
                 {playbackRef.current && 
                     <input id="playback-slider" onChange={(e) => {
                         const target = parseInt(e.target.value, 10)
@@ -1761,8 +1852,54 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
                     }} ref={progressRef} type="range" style={{width: "100%"}}  min={round_begin_ticks.current[0] ?? 0} defaultValue={tickRef.current} max={round_begin_ticks.current[1]}/>
                 }
                 
-            </div>
+            </div> */}
+            <div className="progress">
+                    {playbackRef.current && (() => {
+                        const playback = playbackRef.current;
+                        const [min, max] = round_begin_ticks.current;
+                        let freezeEnd: number | undefined;
+                        let plantTick: number | undefined;
+                        playback.round_timeline.forEach((e, tick) => {
+                            if (e.events === TrackedEvent.FreezeTimeEnd) freezeEnd = tick;
+                            if (e.events === TrackedEvent.BombPlanted && plantTick === undefined) plantTick = tick;
+                        });
+                        const freezeEndPct = pctFor(freezeEnd ?? min, min, max);
+                        const plantPct = pctFor(plantTick ?? max, min, max);
+
+                        return (
+                            <div className="timeline-wrap">
+                                <div className="timeline-track">
+                                    {freezeEnd !== undefined && (
+                                        <div className="tl-band freeze" style={{ left: 0, width: `${freezeEndPct}%` }} />
+                                    )}
+                                    <div className="tl-band live"
+                                        style={{ left: `${freezeEndPct}%`, width: `${plantPct - freezeEndPct}%` }} />
+                                    {plantTick !== undefined && (
+                                        <div className="tl-band postplant"
+                                            style={{ left: `${plantPct}%`, width: `${100 - plantPct}%` }} />
+                                    )}
+                                    {Array.from(playback.round_timeline.entries()).map(([tick, e]) => (
+                                        <div key={tick}
+                                            className={`tl-pip ${pipClass(e.events)}`}
+                                            style={{ left: `${pctFor(tick, min, max)}%` }}
+                                            title={eventLabel(e, playback.player_info)} />
+                                    ))}
+                                    <div className="tl-playhead" ref={playheadRef} />
+                                </div>
+                                <input id="playback-slider" className="timeline-input"
+                                    onChange={(e) => syncTick(parseInt(e.target.value, 10), { pause: true })}
+                                    ref={progressRef} type="range"
+                                    min={min} defaultValue={tickRef.current} max={max} />
+                            </div>
+                        );
+                    })()}
+                </div>
             <div className="rounds">
+                {teamNames.length > 0 &&
+                    <div style={{textAlign:"center", color:"var(--text-dim)", fontSize:"0.85rem"}}>
+                        {teamNames.join(" vs ")}
+                    </div>
+                }
                 <ul style={{justifyContent:"center", marginTop:"10px"}}>
                 {stats && 
                         Array.from({length:stats.rounds}, (_, i) => i+1).map((n, j) => {
@@ -1817,7 +1954,12 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
                                 fireVertices.current.clear()
                                 setPlaying({tick_no:0, playing:false, round_no: n, ready:false})
                                 setRound(n);
-                            }}className={(n) == isPlaying.round_no ? "activeRound" : ""}>
+                            }}
+                            className={[
+                                n == isPlaying.round_no ? "activeRound" : "",
+                                roundResults.get(n)?.winningSide == "T" ? "roundWonT" : "",
+                                roundResults.get(n)?.winningSide == "CT" ? "roundWonCT" : "",
+                            ].filter(Boolean).join(" ")}>
                                 {n}
                             </li>
                         })

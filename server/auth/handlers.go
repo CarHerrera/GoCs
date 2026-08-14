@@ -116,7 +116,7 @@ func SteamCallback(c fiber.Ctx) error {
 				Expires:  time.Now().Add(24 * time.Hour),
 				SameSite: "Lax",
 			})
-			return c.Redirect().Status(303).To("http://localhost:5173/accountHome")
+			return c.Redirect().Status(303).To("http://localhost:6969/accountHome")
 		}
 		return c.Status(500).SendString("SQL ERROR")
 	} else {
@@ -145,7 +145,7 @@ func SteamCallback(c fiber.Ctx) error {
 			Expires:  time.Now().Add(24 * time.Hour),
 			SameSite: "Lax",
 		})
-		return c.Redirect().Status(303).To("http://localhost:5173/accountHome")
+		return c.Redirect().Status(303).To("http://localhost:6969/accountHome")
 	}
 }
 
@@ -278,8 +278,20 @@ func Login(c fiber.Ctx) error {
 		MaxAge:   7 * 24 * 60 * 60,
 	})
 
-	return c.Redirect().Status(200).To("http://localhost:5173/accountHome")
+	return c.Redirect().Status(200).To("http://localhost:6969/accountHome")
 
+}
+
+func Logout(c fiber.Ctx) error {
+	c.Cookie(&fiber.Cookie{
+		Name:     "auth_token",
+		Value:    "",
+		HTTPOnly: true,
+		Secure:   true,
+		SameSite: "Lax",
+		Expires:  time.Now().Add(-1 * time.Hour),
+	})
+	return c.Status(200).JSON(fiber.Map{"message": "Logged out"})
 }
 
 func HashPassword(password string) (string, error) {
@@ -339,7 +351,19 @@ func GetTeamRoundStats(db *sql.DB, teamName string) (*model.TeamRoundStats, erro
 			ROUND(
 				SUM(CASE WHEN tr.SIDE = 3 AND r.BOMB_PLANT = 1 AND r.WINNING_SIDE = 3 THEN 1 ELSE 0 END)
 				/ NULLIF(SUM(CASE WHEN tr.SIDE = 3 AND r.BOMB_PLANT = 1 THEN 1 ELSE 0 END), 0) * 100,
-			1) AS RETAKE_SUCCESS_PCT
+			1) AS RETAKE_SUCCESS_PCT,
+			SUM(CASE
+				WHEN (tr.SIDE = 2 AND r.BUY_TYPE_T IN (3, 4)) OR (tr.SIDE = 3 AND r.BUY_TYPE_CT IN (3, 4)) THEN 1
+				ELSE 0
+			END) AS GUN_ROUNDS,
+			SUM(CASE
+				WHEN r.WINNING_SIDE = tr.SIDE AND
+					((tr.SIDE = 2 AND r.BUY_TYPE_T IN (3, 4)) OR (tr.SIDE = 3 AND r.BUY_TYPE_CT IN (3, 4)))
+				THEN 1 ELSE 0
+			END) AS GUN_WINS,
+			SUM(CASE WHEN r.WINNING_SIDE = tr.SIDE AND r.WIN_REASON IN (8, 9) THEN 1 ELSE 0 END) AS ELIMINATION_WINS,
+			SUM(CASE WHEN r.WINNING_SIDE = tr.SIDE AND r.WIN_REASON IN (1, 7) THEN 1 ELSE 0 END) AS BOMB_WINS,
+			SUM(CASE WHEN r.WINNING_SIDE = tr.SIDE AND r.WIN_REASON = 12 THEN 1 ELSE 0 END) AS TIME_WINS
 		FROM (
 			SELECT DISTINCT rp.MATCHID, rp.ROUND_NO, rp.SIDE
 			FROM ROUND_PARTICIPANTS rp
@@ -357,6 +381,8 @@ func GetTeamRoundStats(db *sql.DB, teamName string) (*model.TeamRoundStats, erro
 		&s.AntiEcoRounds, &s.AntiEcoWins,
 		&s.TPlants, &s.TPlantWins, &s.TPlantWinPct,
 		&s.RetakeOpportunities, &s.RetakeWins, &s.RetakeSuccessPct,
+		&s.GunRounds, &s.GunWins,
+		&s.EliminationWins, &s.BombWins, &s.TimeWins,
 	)
 	if err != nil {
 		return nil, err

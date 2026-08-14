@@ -14,12 +14,13 @@ import (
 
 func newRoundTracker(setup *model.DemoSetup, rounds *int) *model.RoundTracker {
 	return &model.RoundTracker{
-		Teams:     &setup.Teams,
-		Live:      &setup.Live,
-		Catch:     true,
-		Matchid:   setup.MatchId,
-		Rounds:    rounds,
-		FirstKill: &setup.FirstKill,
+		Teams:         &setup.Teams,
+		Live:          &setup.Live,
+		Catch:         true,
+		Matchid:       setup.MatchId,
+		Rounds:        rounds,
+		FirstKill:     &setup.FirstKill,
+		PlayerTeamIdx: make(map[int64]int),
 	}
 }
 func setupDemoFile(fileName string) (*os.File, dem.Parser, error) {
@@ -43,6 +44,43 @@ func setupMap(p dem.Parser, setup *model.DemoSetup) {
 }
 func ensurePlayerExists(PlayerID int64, name string) {
 	database.DB.Exec("INSERT IGNORE INTO PLAYERS (PLAYERID,PLAYERNAME) VALUES (?,?)", PlayerID, name)
+}
+
+// getOrAddPlayer returns the tracked player for id, registering it (both in
+// PLAYERS and in the roster map) if this is the first time it's been seen.
+// Without this, a player who joins after the initial roster capture (e.g. a
+// mid-match substitute) would be written back with a zero-value ID, which
+// later violates the MATCH_STATS -> PLAYERS foreign key.
+func getOrAddPlayer(players map[int64]model.Player, id int64, name string) model.Player {
+	if p, ok := players[id]; ok {
+		return p
+	}
+	ensurePlayerExists(id, name)
+	p := model.Player{Name: name, ID: id}
+	players[id] = p
+	return p
+}
+
+// teamIdxForPlayer returns the roster index (0 or 1) a player was pinned to
+// the first time they were classified, and reuses it from then on instead
+// of re-deriving it from live TeamState every time. Roster membership never
+// changes mid-match, but around the last round of a half a player's live
+// TeamState (ClanName/ID) can already reflect the *next* half's side
+// assignment before the round is officially over and before TeamSideSwitch
+// fires - re-checking it on every event misclassifies players in that
+// window. currentClanName is only consulted the first time a given
+// steamID64 is seen (kickoff roster, or a genuine mid-match joiner).
+func teamIdxForPlayer(rt *model.RoundTracker, steamID64 uint64, currentClanName string) int {
+	id := int64(steamID64)
+	if idx, ok := rt.PlayerTeamIdx[id]; ok {
+		return idx
+	}
+	idx := 1
+	if currentClanName == rt.Teams[0].ClanName {
+		idx = 0
+	}
+	rt.PlayerTeamIdx[id] = idx
+	return idx
 }
 func setupTeams(p dem.Parser, setup *model.DemoSetup, rt *model.RoundTracker) {
 	GS := p.GameState()
@@ -68,7 +106,8 @@ func setupTeams(p dem.Parser, setup *model.DemoSetup, rt *model.RoundTracker) {
 
 		for _, side := range sides {
 			teamName := side.state.ClanName()
-			if teamName == "" {
+			isDefault := teamName == ""
+			if isDefault {
 				teamName = side.fallback
 			}
 			setup.Teams[side.idx] = model.Team{
@@ -79,12 +118,20 @@ func setupTeams(p dem.Parser, setup *model.DemoSetup, rt *model.RoundTracker) {
 				ClanName:       teamName,
 				PlayingPlayers: make(map[int64]model.Player),
 				Inited:         true,
+				IsDefaultName:  isDefault,
 			}
+			// MATCHES.TEAM_A_NAME/TEAM_B_NAME are written from ClanName
+			// regardless of IsDefaultName (see ParseDemoStats) and FK-reference
+			// TEAMS, so a row must exist here even for the "Team 1"/"Team 2"
+			// placeholder — it's just a display label for the match overview.
+			// IsDefaultName is what keeps a placeholder from ever being written
+			// to MATCH_STATS.TEAMNAME as if it were a real roster team.
 			database.DB.Exec("INSERT IGNORE INTO TEAMS (TEAMNAME) VALUES (?)", teamName)
 			for _, player := range side.state.Members() {
 				setup.Teams[side.idx].PlayingPlayers[int64(player.SteamID64)] = model.Player{
 					Name: player.Name, ID: int64(player.SteamID64), Stats: model.PlayerStats{},
 				}
+				rt.PlayerTeamIdx[int64(player.SteamID64)] = side.idx
 				ensurePlayerExists(int64(player.SteamID64), player.Name)
 			}
 		}
@@ -126,13 +173,27 @@ func classifyBuy(roundNo int, avgEquipValue int) int {
 		return BuyTypePistol
 	}
 	switch {
-	case avgEquipValue < 1000:
+	case avgEquipValue < 1500:
 		return BuyTypeEco
-	case avgEquipValue < 3500:
+	case avgEquipValue < 4000:
 		return BuyTypeForce
 	default:
 		return BuyTypeFull
 	}
+}
+
+// teamNameForID resolves a live TeamState's numeric ID back to the
+// fallback-substituted ClanName captured in setupTeams, so ROUNDS.T_TEAM/
+// CT_TEAM always agree with MATCHES.TEAM_A_NAME/TEAM_B_NAME — including for
+// sides with no clan tag, which ClanName() reports as "" here but setupTeams
+// already resolved to "Team 1"/"Team 2".
+func teamNameForID(rt *model.RoundTracker, id int) string {
+	for _, t := range rt.Teams {
+		if t.ID == id {
+			return t.ClanName
+		}
+	}
+	return ""
 }
 
 func setupRoundInfo(p dem.Parser, rt *model.RoundTracker) {
@@ -142,10 +203,11 @@ func setupRoundInfo(p dem.Parser, rt *model.RoundTracker) {
 		}
 
 		gs := p.GameState()
+		rt.FreezeEndTick = gs.IngameTick()
 		database.DB.Exec("INSERT IGNORE INTO ROUNDS (ROUND_NO,MATCHID) VALUES (?,?)", *rt.Rounds, rt.Matchid)
 		var tTotal, ctTotal, tCount, ctCount int
-		tside := gs.TeamTerrorists().ClanName()
-		ctside := gs.TeamCounterTerrorists().ClanName()
+		tside := teamNameForID(rt, gs.TeamTerrorists().ID())
+		ctside := teamNameForID(rt, gs.TeamCounterTerrorists().ID())
 		for _, player := range gs.Participants().Playing() {
 			switch player.GetTeam() {
 			case common.TeamTerrorists:
@@ -171,15 +233,8 @@ func setupRoundInfo(p dem.Parser, rt *model.RoundTracker) {
 		database.DB.Exec(
 			`UPDATE ROUNDS SET BUY_TYPE_T = ?, BUY_TYPE_CT = ?, CT_TEAM = ?, T_TEAM = ?
 			WHERE MATCHID = ? AND ROUND_NO = ?`,
-			tBuy, ctBuy, tside, ctside, rt.Matchid, *rt.Rounds,
+			tBuy, ctBuy, ctside, tside, rt.Matchid, *rt.Rounds,
 		)
-	})
-	p.RegisterEventHandler(func(bp events.BombPlanted) {
-		if !*rt.Live {
-			return
-		}
-		database.DB.Exec(`UPDATE ROUNDS SET BOMB_PLANT = ?
-		WHERE ROUND_NO = ? AND MATCHID = ?`, true, rt.Rounds, rt.Matchid)
 	})
 	p.RegisterEventHandler(func(e events.RoundEnd) {
 		if !*rt.Live {

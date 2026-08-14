@@ -16,9 +16,16 @@ func setUpSideTracking(p dem.Parser, rt *model.RoundTracker) {
 			return
 		}
 		rt.LRTH = false
-		temp := rt.Teams[1].ID
-		rt.Teams[1].ID = rt.Teams[0].ID
-		rt.Teams[0].ID = temp
+		// GS.TeamTerrorists()/TeamCounterTerrorists() are fixed slots
+		// (team-num 2 and 3); TeamState.ID() reflects whichever clan
+		// currently occupies that slot, not a persistent per-clan identity.
+		// rt.Teams[0]/[1] track "the team that started as T"/"...as CT", so
+		// their recorded ID has to follow them across the side swap. This is
+		// only used for team-level score bookkeeping now - player-level
+		// classification uses the stable rt.PlayerTeamIdx map instead, since
+		// this swap and the live entity reassignment aren't perfectly
+		// synchronized at the round boundary.
+		rt.Teams[1].ID, rt.Teams[0].ID = rt.Teams[0].ID, rt.Teams[1].ID
 		rt.Catch = true
 	})
 	p.RegisterEventHandler(func(events.AnnouncementLastRoundHalf) {
@@ -38,16 +45,88 @@ func setUpSideTracking(p dem.Parser, rt *model.RoundTracker) {
 		}
 	})
 }
+func setUpBombPlants(ps dem.Parser, setup *model.DemoSetup, rt *model.RoundTracker) {
+	ps.RegisterEventHandler(func(e events.BombExplode) {
+		if !*rt.Live {
+			return
+		}
+		database.DB.Exec(`UPDATE ROUNDS SET BOMB_EXPLODE = ?
+		WHERE ROUND_NO = ? AND MATCHID = ?`, true, rt.Rounds, rt.Matchid)
+	})
+	ps.RegisterEventHandler(func(bp events.BombPlanted) {
+		if !*rt.Live {
+			return
+		}
+		var planterID *int64
+		if bp.Player != nil {
+			id := int64(bp.Player.SteamID64)
+			planterID = &id
+		}
+		database.DB.Exec(`UPDATE ROUNDS SET BOMB_PLANT = ?, SITE = ?, PLANTER_PLAYERID = ?
+		WHERE ROUND_NO = ? AND MATCHID = ?`, true, bombsiteLabel(bp.Site), planterID, rt.Rounds, rt.Matchid)
+	})
+	ps.RegisterEventHandler(func(bd events.BombDefused) {
+		if !*rt.Live {
+			return
+		}
+		var defuserID *int64
+		if bd.Player != nil {
+			id := int64(bd.Player.SteamID64)
+			defuserID = &id
+		}
+		database.DB.Exec(`UPDATE ROUNDS SET BOMB_DEFUSE = ?, DEFUSER_PLAYERID = ?
+		WHERE ROUND_NO = ? AND MATCHID = ?`, true, defuserID, rt.Rounds, rt.Matchid)
+	})
+
+}
+
+func bombsiteLabel(site events.Bombsite) *string {
+	switch site {
+	case events.BombsiteA:
+		s := "A"
+		return &s
+	case events.BombsiteB:
+		s := "B"
+		return &s
+	default:
+		return nil
+	}
+}
+
+// tradeOpportunityDistance is an approximate "close enough to have a shot at
+// the trade" radius in engine units. It's a heuristic, not a precise game
+// mechanic, tune accordingly
+const tradeOpportunityDistance = 1000.0
+
+// hasNearbyLivingTeammate reports whether any of the victim's teammates
+// (other than the victim) were alive within tradeOpportunityDistance at the
+// moment of death, i.e. whether a trade was physically possible.
+func hasNearbyLivingTeammate(victim *common.Player, team *common.TeamState) bool {
+	for _, teammate := range team.Members() {
+		if teammate == nil || teammate.SteamID64 == victim.SteamID64 {
+			continue
+		}
+		if !teammate.IsAlive() {
+			continue
+		}
+		if teammate.Position().Distance(victim.Position()) <= tradeOpportunityDistance {
+			return true
+		}
+	}
+	return false
+}
 
 func setUpKillTracking(ps dem.Parser, setup *model.DemoSetup, rt *model.RoundTracker) {
 	type RoundStats struct {
-		k         int
-		a         int
-		dmg       int
-		fk        bool
-		fd        bool
-		traded    bool
-		tradeKill bool
+		k                int
+		a                int
+		dmg              int
+		fk               bool
+		fd               bool
+		traded           bool
+		tradeKill        bool
+		died             bool
+		tradeOpportunity bool
 	}
 	type recentKill struct {
 		originalVictimID uint64
@@ -74,37 +153,50 @@ func setUpKillTracking(ps dem.Parser, setup *model.DemoSetup, rt *model.RoundTra
 		assister := kill.Assister
 		victim := kill.Victim
 		tick := ps.GameState().IngameTick()
+		// Five seconds
 		tradeWindow := int(5 * ps.TickRate())
-
+		// Might as well settle both killer and victim here
 		if killer != nil && victim != nil && killer.Name != victim.Name {
-			team := killer.TeamState
-			idx := -1
-			if team.ID() == rt.Teams[0].ID {
-				idx = 0
-			} else {
-				idx = 1
-			}
-			p, _ := rt.Teams[idx].PlayingPlayers[int64(killer.SteamID64)]
-			p.Stats.Kills++
-			if kill.IsHeadshot {
-				p.Stats.HeadshotKills++
-			}
-			if *rt.FirstKill {
-				p.Stats.EntryKills++
-			}
-
-			mk, ok := multiKills[killer.SteamID64]
+			killertTeam := killer.TeamState
+			victimTeam := victim.TeamState
+			killerIdx := teamIdxForPlayer(rt, killer.SteamID64, killertTeam.ClanName())
+			victimIdx := teamIdxForPlayer(rt, victim.SteamID64, victimTeam.ClanName())
+			k := getOrAddPlayer(rt.Teams[killerIdx].PlayingPlayers, int64(killer.SteamID64), killer.Name)
+			v := getOrAddPlayer(rt.Teams[victimIdx].PlayingPlayers, int64(victim.SteamID64), victim.Name)
+			mkk, ok := multiKills[killer.SteamID64]
 			if !ok {
-				mk = RoundStats{}
+				mkk = RoundStats{}
 			}
-			mk.k++
+			mkv, ok := multiKills[victim.SteamID64]
+			if !ok {
+				mkv = RoundStats{}
+			}
+			k.Stats.Kills++
+			v.Stats.Deaths++
+			mkk.k++
+			mkv.died = true
+			mkk.died = false
+			mkv.tradeOpportunity = hasNearbyLivingTeammate(victim, victimTeam)
+			if kill.IsHeadshot {
+				k.Stats.HeadshotKills++
+			}
 			if *rt.FirstKill {
-				mk.fk = true
-			}
-			multiKills[killer.SteamID64] = mk
-			rt.Teams[idx].PlayingPlayers[int64(killer.SteamID64)] = p
+				k.Stats.EntryKills++
+				v.Stats.EntryDeaths++
+				mkk.fk = true
+				mkv.fd = true
 
+				elapsedSeconds := float64(tick-rt.FreezeEndTick) / ps.TickRate()
+				database.DB.Exec(`UPDATE ROUNDS SET OPENING_KILL_SECONDS = ?
+					WHERE MATCHID = ? AND ROUND_NO = ?`, elapsedSeconds, rt.Matchid, *rt.Rounds)
+			}
+			multiKills[killer.SteamID64] = mkk
+			multiKills[victim.SteamID64] = mkv
+			rt.Teams[killerIdx].PlayingPlayers[int64(killer.SteamID64)] = k
+			rt.Teams[victimIdx].PlayingPlayers[int64(victim.SteamID64)] = v
+			// check if victim recently got a kill
 			if prev, ok := recentKills[victim.SteamID64]; ok {
+				// Check if difference is less than 5 seconds
 				if tick-prev.tick <= tradeWindow {
 					origMk, ok := multiKills[prev.originalVictimID]
 					if !ok {
@@ -112,7 +204,7 @@ func setUpKillTracking(ps dem.Parser, setup *model.DemoSetup, rt *model.RoundTra
 					}
 					origMk.traded = true
 					multiKills[prev.originalVictimID] = origMk
-
+					// Find player and then adjust the counter accordingly
 					for i := range setup.Teams {
 						for name, player := range setup.Teams[i].PlayingPlayers {
 							if uint64(player.ID) == prev.originalVictimID {
@@ -126,11 +218,11 @@ func setUpKillTracking(ps dem.Parser, setup *model.DemoSetup, rt *model.RoundTra
 					mk2 := multiKills[killer.SteamID64]
 					mk2.tradeKill = true
 					multiKills[killer.SteamID64] = mk2
-					p.Stats.TradeKills++
-					rt.Teams[idx].PlayingPlayers[int64(killer.SteamID64)] = p
+					k.Stats.TradeKills++
+					rt.Teams[killerIdx].PlayingPlayers[int64(killer.SteamID64)] = k
 				}
 			}
-
+			// add killer to recent kill list for this round
 			recentKills[killer.SteamID64] = recentKill{
 				originalVictimID: victim.SteamID64,
 				tick:             tick,
@@ -138,14 +230,8 @@ func setUpKillTracking(ps dem.Parser, setup *model.DemoSetup, rt *model.RoundTra
 		}
 
 		if assister != nil {
-			team := assister.TeamState
-			idx := -1
-			if team.ID() == rt.Teams[0].ID {
-				idx = 0
-			} else {
-				idx = 1
-			}
-			p, _ := rt.Teams[idx].PlayingPlayers[int64(assister.SteamID64)]
+			idx := teamIdxForPlayer(rt, assister.SteamID64, assister.TeamState.ClanName())
+			p := getOrAddPlayer(rt.Teams[idx].PlayingPlayers, int64(assister.SteamID64), assister.Name)
 			p.Stats.Assists++
 			rt.Teams[idx].PlayingPlayers[int64(assister.SteamID64)] = p
 
@@ -155,31 +241,6 @@ func setUpKillTracking(ps dem.Parser, setup *model.DemoSetup, rt *model.RoundTra
 			}
 			mk.a++
 			multiKills[assister.SteamID64] = mk
-		}
-
-		if victim != nil {
-			team := victim.TeamState
-			idx := -1
-			if team.ID() == rt.Teams[0].ID {
-				idx = 0
-			} else {
-				idx = 1
-			}
-			p, _ := rt.Teams[idx].PlayingPlayers[int64(victim.SteamID64)]
-			p.Stats.Deaths++
-			if *rt.FirstKill {
-				p.Stats.EntryDeaths++
-			}
-
-			mk, ok := multiKills[victim.SteamID64]
-			if !ok {
-				mk = RoundStats{}
-			}
-			if *rt.FirstKill {
-				mk.fd = true
-			}
-			multiKills[victim.SteamID64] = mk
-			rt.Teams[idx].PlayingPlayers[int64(victim.SteamID64)] = p
 		}
 
 		if *rt.FirstKill {
@@ -207,23 +268,9 @@ func setUpKillTracking(ps dem.Parser, setup *model.DemoSetup, rt *model.RoundTra
 		}
 		gs := ps.GameState()
 
-		_, err := database.DB.Exec(
-			`UPDATE ROUND_PARTICIPANTS SET SURVIVED = 0
-			 WHERE MATCHID = ? AND ROUND_NO = ?`,
-			rt.Matchid, *rt.Rounds)
-		if err != nil {
-			panic(err)
-		}
-
 		for _, p := range gs.Participants().Playing() {
-			team := p.TeamState
-			idx := -1
-			if team.ID() == rt.Teams[0].ID {
-				idx = 0
-			} else {
-				idx = 1
-			}
-			x, _ := rt.Teams[idx].PlayingPlayers[int64(p.SteamID64)]
+			idx := teamIdxForPlayer(rt, p.SteamID64, p.TeamState.ClanName())
+			x := getOrAddPlayer(rt.Teams[idx].PlayingPlayers, int64(p.SteamID64), p.Name)
 			stats := multiKills[p.SteamID64]
 
 			switch stats.k {
@@ -242,31 +289,21 @@ func setUpKillTracking(ps dem.Parser, setup *model.DemoSetup, rt *model.RoundTra
 
 			gotKill := stats.k > 0
 			gotAssist := stats.a > 0
-
+			survived := !stats.died
 			_, err := database.DB.Exec(`
 				UPDATE ROUND_PARTICIPANTS
 					SET KILLS = ?, GOT_KILL = ?, FIRST_KILL = ?,
 					    GOT_ASSIST = ?, FIRST_DEATH = ?, DAMAGE = ?,
-					    GOT_TRADED = ?
+					    GOT_TRADED = ?, TRADE_OPPORTUNITY = ?, SURVIVED = ?
 					WHERE MATCHID = ? AND ROUND_NO = ? AND PLAYERID = ?
 				`, stats.k, gotKill, stats.fk,
 				gotAssist, stats.fd, stats.dmg,
-				stats.traded,
+				stats.traded, stats.tradeOpportunity, survived,
 				rt.Matchid, *rt.Rounds, p.SteamID64)
 			if err != nil {
 				panic(err)
 			}
 
-			if p.IsAlive() {
-				_, err := database.DB.Exec(`
-					UPDATE ROUND_PARTICIPANTS
-						SET SURVIVED = 1
-						WHERE MATCHID = ? AND ROUND_NO = ? AND PLAYERID = ?
-					`, rt.Matchid, *rt.Rounds, p.SteamID64)
-				if err != nil {
-					panic(err)
-				}
-			}
 		}
 
 		multiKills = make(map[uint64]RoundStats)
@@ -316,14 +353,16 @@ func setUpClutchTracking(p dem.Parser, setup *model.DemoSetup, rt *model.RoundTr
 			return
 		}
 
+		opponents := ctAlive
+		if clutchSide == common.TeamCounterTerrorists {
+			opponents = tAlive
+		}
+
 		for _, player := range gs.Participants().Playing() {
 			if !player.IsAlive() || player.GetTeam() != clutchSide {
 				continue
 			}
-			idx := 0
-			if player.TeamState.ID() != rt.Teams[0].ID {
-				idx = 1
-			}
+			idx := teamIdxForPlayer(rt, player.SteamID64, player.TeamState.ClanName())
 			pl, ok := setup.Teams[idx].PlayingPlayers[int64(player.SteamID64)]
 			if !ok {
 				break
@@ -337,6 +376,11 @@ func setUpClutchTracking(p dem.Parser, setup *model.DemoSetup, rt *model.RoundTr
 				winningSide: clutchSide,
 				active:      true,
 			}
+
+			database.DB.Exec(`INSERT IGNORE INTO CLUTCHES
+				(MATCHID, ROUND_NO, PLAYERID, SIDE, OPPONENTS, WON)
+				VALUES (?,?,?,?,?,0)`,
+				rt.Matchid, *rt.Rounds, player.SteamID64, int(clutchSide), opponents)
 			break
 		}
 	})
@@ -351,8 +395,16 @@ func setUpClutchTracking(p dem.Parser, setup *model.DemoSetup, rt *model.RoundTr
 				pl.Stats.ClutchesWon++
 				setup.Teams[current.teamIdx].PlayingPlayers[int64(current.playerID)] = pl
 			}
+			database.DB.Exec(`UPDATE CLUTCHES SET WON = 1
+				WHERE MATCHID = ? AND ROUND_NO = ? AND PLAYERID = ?`,
+				rt.Matchid, *rt.Rounds, current.playerID)
 		}
-		current = clutchState{}
+		// Don't clear `current` here: a player can still register a kill in
+		// the brief dead-time between RoundEnd and the next RoundStart (the
+		// victim's IsAlive() hasn't caught up to the kill yet at that exact
+		// event), which would otherwise be misread as a fresh 1-vs-1 and
+		// spuriously start a second, bogus clutch for that same round.
+		// RoundStart is the only thing that should re-arm detection.
 	})
 }
 func setUpFlashTracking(p dem.Parser, setup *model.DemoSetup, rt *model.RoundTracker) {
@@ -471,12 +523,7 @@ func setUpDamageTracking(ps dem.Parser, rt *model.RoundTracker) {
 			return
 		}
 		if ph.Attacker != nil {
-			idx := -1
-			if ph.Attacker.TeamState.ID() == rt.Teams[0].ID {
-				idx = 0
-			} else {
-				idx = 1
-			}
+			idx := teamIdxForPlayer(rt, ph.Attacker.SteamID64, ph.Attacker.TeamState.ClanName())
 			p, ok := rt.Teams[idx].PlayingPlayers[int64(ph.Attacker.SteamID64)]
 			if !ok {
 				return

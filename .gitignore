@@ -2,3 +2,5 @@
 uploads/*
 !uploads/.gitkeep
 .env
+faceit-stats.json
+./FakeUploads

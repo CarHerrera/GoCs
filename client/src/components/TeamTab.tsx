@@ -59,9 +59,10 @@ const SeasonsOverview: React.FC = () => {
   const [seasons, setSeasons] = useState<Season[]>([]);
   useEffect(() => {
     fetch('http://localhost:4000/api/team/seasons', { credentials: 'include' })
-      .then(r => r.json()).then(setSeasons).catch(() => {});
+      .then(r => r.json()).then((d) => {
+        setSeasons(d)
+      }).catch(() => {});
   }, []);
-
   return (
     <div className="seasons-overview">
       <div className="roster-label">Seasons</div>

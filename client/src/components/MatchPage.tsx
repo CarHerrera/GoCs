@@ -2,87 +2,120 @@ import { useSearchParams } from "react-router-dom";
 import { useState, useEffect } from 'react';
 import '../css/stats.css'
 import DemoPlayback from "./DemoPlayback";
-interface Stats{
-    ID: number,
-    Clanname: string,
-    Endscore: number,
-    Tscore: number,
-    CTScore: number,
-    Playing: Record<string, Player>
-}
-interface Player{
-    name: string,
-    ID: number,
-    stats: PlayerStats
-}
-interface PlayerStats{
-    kills: number,
-    deaths: number,
-    assists: number
+import AdvancedStatsPanel from "./AdvancedStatsSubTab";
+import UnassignedSection from "./UnassignedTab";
+import type {Stats} from "../helpers/types"
+
+
+const TABS = [
+    { id: 1, label: "Overview" },
+    { id: 2, label: "Advanced Stats" },
+    // { id: 3, label: "HeatMaps" },
+    { id: 4, label: "2D Playback" },
+] as const;
+
+function NavBar({activeTab, setActive}:{activeTab: number, setActive: React.Dispatch<React.SetStateAction<number>>}){
+    return (
+        <div className="subtabs">
+            {TABS.map(tab => (
+                <span
+                    key={tab.id}
+                    onClick={() => setActive(tab.id)}
+                    className={activeTab === tab.id ? "active" : ""}
+                >
+                    {tab.label}
+                </span>
+            ))}
+        </div>
+    );
 }
 
-function NavBar({setActive}:{setActive :React.Dispatch<React.SetStateAction<number>>}){
-    return <>
-        <ul style={{width:"100%"}}>
-            <li onClick={() => setActive(1)}>Overview</li>
-            <li onClick={() => setActive(2)}>Advanced Stats</li>
-            <li onClick={() => setActive(3)}>HeatMaps</li>
-            <li onClick={() => setActive(4)}>2D Playback</li>
-        </ul>
-    </>
+function TeamTable({team}: {team: Stats}){
+    const players = Object.entries(team.Playing ?? {})
+        .sort(([, a], [, b]) => b.stats.kills - a.stats.kills);
+
+    return (
+        <div>
+            <h3>{team.Clanname}</h3>
+            <table className="statsTable">
+                <thead>
+                    <tr>
+                        <td>Player</td>
+                        <td>K</td>
+                        <td>A</td>
+                        <td>D</td>
+                        <td>KD Ratio</td>
+                        <td>2K</td>
+                        <td>3K</td>
+                        <td>4K</td>
+                        <td>5K</td>
+                        <td>ADR</td>
+                        <td>UD</td>
+                        <td>KAST%</td>
+                        <td>HS%</td>
+                        <td>Rating</td>
+                    </tr>
+                </thead>
+                <tbody>
+                    {players.map(([id, player]) => {
+                        const ratio = player.stats.kills/ player.stats.deaths;
+                        const hsPct = player.stats.kills > 0
+                            ? (player.stats.hs / player.stats.kills) * 100
+                            : 0;
+                        return (
+                            <tr key={id}>
+                                <td>{player.name}</td>
+                                <td>{player.stats.kills}</td>
+                                <td>{player.stats.assists}</td>
+                                <td>{player.stats.deaths}</td>
+                                <td className={ratio > 1 ? "pos" : ratio  < 1 ? "neg" : ""}>
+                                    {ratio.toFixed(2)}
+                                </td>
+                                <td>{player.stats["2k"]}</td>
+                                <td>{player.stats["3k"]}</td>
+                                <td>{player.stats["4k"]}</td>
+                                <td>{player.stats["5k"]}</td>
+                                <td>{player.stats.adr.toFixed(1)}</td>
+                                <td>{player.stats.ud}</td>
+                                <td>{player.stats.kast.toFixed(1)}%</td>
+                                <td>{hsPct.toFixed(0)}%</td>
+                                <td className="rating-cell">{player.stats.rating.toFixed(2)}</td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
 }
 
 function Overview ({stats}:{stats: Stats[]}){
     if (!stats || stats.length < 2) {
         return <div className="loading">Loading match stats...</div>;
     }
+    
     return (
         <div className="stats">
-                <div>
-                    <h3>{stats.length !=0 ? stats[0].Clanname : ""}</h3>
-                    <table className="statsTable">
-                        <thead>
-                            <tr>
-                            <td>Player</td>
-                            <td>Kills</td>
-                            <td>Assists</td>
-                            <td>Deaths</td>
-                            </tr>
-                        </thead>
-                        <tbody>{  
-                                    Object.entries(stats[0]?.Playing).map(([, player], i) => {
-                                    return <tr key ={i}><td>{player.name}</td><td>{player.stats.kills}</td><td>{player.stats.assists}</td><td>{player.stats.deaths}</td></tr>
-                                })}</tbody>
-                    </table>
-                </div>
-                <div>
-                    <h3>{stats.length !=0 ? stats[1].Clanname : ""}</h3>
-                    <table className="statsTable">
-                        <thead>
-                            <tr>
-                            <td>Player</td>
-                            <td>Kills</td>
-                            <td>Assists</td>
-                            <td>Deaths</td>
-                            </tr>
-                        </thead>
-                        <tbody>{   stats.length !=0 ?
-                                Object.entries(stats[1].Playing).map(([, player], i) => {
-                                    return <tr key ={i}><td>{player.name}</td><td>{player.stats.kills}</td><td>{player.stats.assists}</td><td>{player.stats.deaths}</td></tr>
-                                }): ""
-                            }</tbody>
-                    </table>
-                </div>
-            </div>
-    )
+            <TeamTable team={stats[0]} />
+            <TeamTable team={stats[1]} />
+        </div>
+    );
 }
+
+function SideBreakdown({team}: {team: Stats}){
+    return (
+        <span className="side-breakdown">
+            <span className="sb-dot t" /> {team.TScore}
+            <span className="sb-dot c" /> {team.CTScore}
+        </span>
+    );
+}
+
 function MatchPage(){
     const [searchParams] = useSearchParams();
     const [stats, setStats] = useState<Stats[]>([])
     const [map, setMap] = useState<string>("");
     const [activeTab, setActive] = useState<number>(1)
-    // const map = searchParams.get("map")!;
-    // const file = searchParams.get("file")!;
     const matchId = searchParams.get("matchId")
     useEffect(() => {
         fetch(`http://localhost:4000/api/match/advancedStats/${matchId}`, { credentials: 'include' })
@@ -98,33 +131,46 @@ function MatchPage(){
     let frontPage = (<>Hello</>);
     if (activeTab == 1){
         frontPage = (<Overview stats={stats}></Overview>)
-    } else if (activeTab == 4){
-        console.log(matchId)
+    } else if (activeTab == 2) {
+        frontPage = (<AdvancedStatsPanel TeamA={stats[0]} TeamB={stats[1]} matchId={Number(matchId)}></AdvancedStatsPanel>)
+    }else if (activeTab == 4){
         frontPage = (<DemoPlayback matchId={Number(matchId) ?? -1} map={map}></DemoPlayback>)
     }
-    // console.log(searchParams)
-    // Add Some Check to see if the demo has been parsed before via a SQL check
+
     return (<>
         <div>
-            <div className="header">
-                <h1>{stats.length !=0 ? stats[0].Clanname : "Team 1"} vs {stats.length !=0 ? stats[1].Clanname : "Team 2"}</h1>
-                {stats.length != 0 ? `${stats[0].Endscore} - ${stats[1].Endscore}`: ""}
-                <NavBar setActive={setActive}></NavBar>
+            <div className="header match-header">
+                <h1>
+                    {stats && stats.length !=0 ? stats[0].Clanname : "Team 1"}
+                    <span className="vs"> vs </span>
+                    {stats && stats.length !=0 ? stats[1].Clanname : "Team 2"}
+                </h1>
+                {stats && stats.length != 0 && (
+                    <div className="score-row">
+                        <span className="score-main">{stats[0].Endscore} — {stats[1].Endscore}</span>
+                        <span className="score-detail">
+                            <SideBreakdown team={stats[0]} /> &nbsp;·&nbsp; <SideBreakdown team={stats[1]} />
+                        </span>
+                    </div>
+                )}
+                <NavBar activeTab={activeTab} setActive={setActive}></NavBar>
             </div>
+
+            {matchId && Number(matchId) > 0 && (
+                <UnassignedSection matchId={Number(matchId)} hideWhenEmpty />
+            )}
 
             {activeTab == 1 ? (
                 <div className="grid">
                     <div className="map">
-                        <img style={{display:"inline"}}src={`/overviews/${map}.jpg`}></img>
+                        <img style={{display:"inline"}} src={`/overviews/${map}.jpg`} alt={`${map} overview`}></img>
                     </div>
                     {frontPage}
                 </div>
             ) : (frontPage)
             }
-            
         </div>
-        
     </>)
 }
 
-export default MatchPage;  
+export default MatchPage;

@@ -39,6 +39,7 @@ interface UnparsedNote {
 // This is what the API returns — matches your Go response shape
 interface PlayerPageData {
   hasMatches: boolean;
+  steamLinked: boolean;
   steamId?: number;
   // these get added later once you build out the stats endpoint
   stats?: SeasonStats;
@@ -305,19 +306,13 @@ export default function PlayerPage() {
         return res.json();
       })
       .then((d: PlayerPageData | null) => {
-        console.log(d)
         if (!d) return;
         setData(d);
-        console.log(d)
-        // Modal decision made here, after we have real data from the server
-        // // Cookie is just a cache — server data is the source of truth
-        // const isFirstVisit = !Cookies.get('firstVisit');
-        // console.log(isFirstVisit)
-        // if (isFirstVisit && !d.steamLinked) {
-        //   setShowModal(true);
-        // } else {
-        //   Cookies.set('firstVisit', 'false', { expires: 365 });
-        // }
+        // Server data is the source of truth for whether Steam is linked —
+        // prompt to link it instead of silently showing an empty profile.
+        if (!d.steamLinked) {
+          setShowModal(true);
+        }
       })
       .catch(err => {
         console.error(err);

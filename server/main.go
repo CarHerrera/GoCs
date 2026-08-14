@@ -37,7 +37,7 @@ func main() {
 	})
 
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "http://127.0.0.1:5173/", "https://localhost:5173"},
+		AllowOrigins:     []string{"http://localhost:6969", "http://127.0.0.1:6969/", "https://localhost:6969"},
 		AllowMethods:     []string{"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
 		AllowCredentials: true,
@@ -50,9 +50,9 @@ func main() {
 	team.RegisterRoutes(app)
 	season.RegisterRoutes(app)
 	matches.RegisterRoutes(app)
-	for _, r := range app.GetRoutes() {
-		log.Printf("%s %s", r.Method, r.Path)
-	}
+	// for _, r := range app.GetRoutes() {
+	// 	log.Printf("%s %s", r.Method, r.Path)
+	// }
 	// demo.RegisterRoutes(app)
 	app.Get("/AllDemos", func(c fiber.Ctx) error {
 		entries, err := os.ReadDir(auth.GetDemoPath())
@@ -65,8 +65,9 @@ func main() {
 			if lastthree := e.Name()[len(e.Name())-3:]; lastthree != "dem" {
 				continue
 			}
+			// fmt.Printf("Name: %v\n", e)
 			var row model.BaseDemo
-			if err := database.DB.QueryRow("SELECT DEMO_NAME, MATCHID, MATCH_DATE, SAVED_DATE, MAP, PARSED_STATS, PARSED_2D FROM MATCHES WHERE DEMO_NAME = ? ORDER BY MATCH_DATE DESC", e.Name()).Scan(&row.FileName, &row.ID, &row.SavedDate, &row.ModDate, &row.Map, &row.BaseStats, &row.Parsed); err != nil {
+			if err := database.DB.QueryRow("SELECT DEMO_NAME, MATCHID, COALESCE(MATCH_DATE, ''), COALESCE(SAVED_DATE, ''), MAP, PARSED_STATS, PARSED_2D FROM MATCHES WHERE DEMO_NAME = ? ORDER BY MATCH_DATE DESC", e.Name()).Scan(&row.FileName, &row.ID, &row.SavedDate, &row.ModDate, &row.Map, &row.BaseStats, &row.Parsed); err != nil {
 				if err == sql.ErrNoRows {
 					path := auth.GetDemoPath() + e.Name()
 					demofile, _ := os.Open(path)
@@ -97,6 +98,8 @@ func main() {
 						ID:        x,
 					}
 					file = append(file, infoSend)
+				} else {
+					fmt.Printf("%v", err)
 				}
 			} else {
 				file = append(file, row)

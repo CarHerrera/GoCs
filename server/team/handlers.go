@@ -1,6 +1,8 @@
 package team
 
 import (
+	"database/sql"
+	"fmt"
 	"log"
 	"math"
 	"os"
@@ -10,8 +12,11 @@ import (
 	"server/model"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
+	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
 )
 
 func Summary(c fiber.Ctx) error {
@@ -188,31 +193,51 @@ func Summary(c fiber.Ctx) error {
 		log.Printf("Team stats query error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to load team stats"})
 	}
+	plantWinPct := 0.0
+	if ts.TPlantWinPct.Valid {
+		plantWinPct = ts.TPlantWinPct.Float64
+	}
+	retakeWinPct := 0.0
+	if ts.RetakeSuccessPct.Valid {
+		retakeWinPct = ts.RetakeSuccessPct.Float64
+	}
 
 	TeamResponse := fiber.Map{
 		"players": roster,
 		"wins":    max_wins,
 		"loss":    max_loss,
 		"teamStats": fiber.Map{
-			"totalRounds":  ts.TotalRounds,
-			"roundsWon":    ts.RoundsWon,
-			"roundsLost":   ts.RoundsLost,
-			"tRounds":      ts.TRounds,
-			"ctRounds":     ts.CTRounds,
-			"tWins":        ts.TWins,
-			"ctWins":       ts.CTWins,
-			"pistolRounds": ts.PistolRounds,
-			"pistolWins":   ts.PistolWins,
-			"pistolPct":    math.Round(model.SafeDiv(ts.PistolWins, ts.PistolRounds)),
-			"ecoRounds":    ts.EcoRounds,
-			"ecoWins":      ts.EcoWins,
-			"ecoPct":       math.Round(model.SafeDiv(ts.EcoWins, ts.EcoRounds)),
-			"forceRounds":  ts.ForceRounds,
-			"forceWins":    ts.ForceWins,
-			"forcePct":     math.Round(model.SafeDiv(ts.ForceWins, ts.ForceRounds)),
-			"fullRounds":   ts.FullBuyRounds,
-			"fullWins":     ts.FullBuyWins,
-			"fullPct":      math.Round(model.SafeDiv(ts.FullBuyWins, ts.FullBuyRounds)),
+			"totalRounds":         ts.TotalRounds,
+			"roundsWon":           ts.RoundsWon,
+			"roundsLost":          ts.RoundsLost,
+			"tRounds":             ts.TRounds,
+			"ctRounds":            ts.CTRounds,
+			"tWins":               ts.TWins,
+			"ctWins":              ts.CTWins,
+			"pistolRounds":        ts.PistolRounds,
+			"pistolWins":          ts.PistolWins,
+			"pistolPct":           math.Round(model.SafeDiv(ts.PistolWins, ts.PistolRounds)),
+			"ecoRounds":           ts.EcoRounds,
+			"ecoWins":             ts.EcoWins,
+			"ecoPct":              math.Round(model.SafeDiv(ts.EcoWins, ts.EcoRounds)),
+			"forceRounds":         ts.ForceRounds,
+			"forceWins":           ts.ForceWins,
+			"forcePct":            math.Round(model.SafeDiv(ts.ForceWins, ts.ForceRounds)),
+			"fullRounds":          ts.FullBuyRounds,
+			"fullWins":            ts.FullBuyWins,
+			"fullPct":             math.Round(model.SafeDiv(ts.FullBuyWins, ts.FullBuyRounds)),
+			"gunRounds":           ts.GunRounds,
+			"gunWins":             ts.GunWins,
+			"gunPct":              math.Round(model.SafeDiv(ts.GunWins, ts.GunRounds)),
+			"antiEcoRounds":       ts.AntiEcoRounds,
+			"antiEcoWins":         ts.AntiEcoWins,
+			"antiEcoPct":          math.Round(model.SafeDiv(ts.AntiEcoWins, ts.AntiEcoRounds)),
+			"tPlants":             ts.TPlants,
+			"tPlantWins":          ts.TPlantWins,
+			"tPlantWinPct":        plantWinPct,
+			"retakeOpportunities": ts.RetakeOpportunities,
+			"retakeWins":          ts.RetakeWins,
+			"retakeWinPct":        retakeWinPct,
 		},
 	}
 	return c.JSON(TeamResponse)
@@ -293,14 +318,38 @@ func Advanced(c fiber.Ctx) error {
 		})
 	}
 
+	plantWinPct := 0.0
+	if ts.TPlantWinPct.Valid {
+		plantWinPct = ts.TPlantWinPct.Float64
+	}
+	retakeWinPct := 0.0
+	if ts.RetakeSuccessPct.Valid {
+		retakeWinPct = ts.RetakeSuccessPct.Float64
+	}
+
 	return c.JSON(fiber.Map{
 		"economy": fiber.Map{
-			"pistolPct": math.Round(model.SafeDiv(ts.PistolWins, ts.PistolRounds)),
-			"tSidePct":  math.Round(model.SafeDiv(ts.TWins, ts.TRounds)),
-			"ctSidePct": math.Round(model.SafeDiv(ts.CTWins, ts.CTRounds)),
-			"ecoPct":    math.Round(model.SafeDiv(ts.EcoWins, ts.EcoRounds)),
-			"forcePct":  math.Round(model.SafeDiv(ts.ForceWins, ts.ForceRounds)),
-			"fullPct":   math.Round(model.SafeDiv(ts.FullBuyWins, ts.FullBuyRounds)),
+			"pistolPct":  math.Round(model.SafeDiv(ts.PistolWins, ts.PistolRounds)),
+			"tSidePct":   math.Round(model.SafeDiv(ts.TWins, ts.TRounds)),
+			"ctSidePct":  math.Round(model.SafeDiv(ts.CTWins, ts.CTRounds)),
+			"ecoPct":     math.Round(model.SafeDiv(ts.EcoWins, ts.EcoRounds)),
+			"forcePct":   math.Round(model.SafeDiv(ts.ForceWins, ts.ForceRounds)),
+			"fullPct":    math.Round(model.SafeDiv(ts.FullBuyWins, ts.FullBuyRounds)),
+			"gunPct":     math.Round(model.SafeDiv(ts.GunWins, ts.GunRounds)),
+			"antiEcoPct": math.Round(model.SafeDiv(ts.AntiEcoWins, ts.AntiEcoRounds)),
+		},
+		"bombRetakes": fiber.Map{
+			"plants":              ts.TPlants,
+			"plantWins":           ts.TPlantWins,
+			"plantWinPct":         plantWinPct,
+			"retakeOpportunities": ts.RetakeOpportunities,
+			"retakeWins":          ts.RetakeWins,
+			"retakeWinPct":        retakeWinPct,
+		},
+		"winConditions": fiber.Map{
+			"eliminationPct": math.Round(model.SafeDiv(ts.EliminationWins, ts.RoundsWon)),
+			"bombPct":        math.Round(model.SafeDiv(ts.BombWins, ts.RoundsWon)),
+			"timePct":        math.Round(model.SafeDiv(ts.TimeWins, ts.RoundsWon)),
 		},
 		"maps": maps,
 	})
@@ -505,23 +554,81 @@ func Logo(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"url": logoURL})
 }
 
+// quickMapName does a minimal parse of a demo file just far enough to read
+// the map name off the ServerInfo net message, then cancels — mirrors the
+// lazy-scan logic in main.go's /AllDemos handler.
+func quickMapName(path string) string {
+	demofile, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer demofile.Close()
+	p := dem.NewParser(demofile)
+	defer p.Close()
+	var gameMap string
+	p.RegisterNetMessageHandler(func(m *msg.CSVCMsg_ServerInfo) {
+		gameMap = *m.MapName
+		p.Cancel()
+	})
+	p.ParseToEnd()
+	return gameMap
+}
+
 func UploadDemo(c fiber.Ctx) error {
-	_, ok := c.Locals("accountID").(int64)
+	accountID, ok := c.Locals("accountID").(int64)
 	if !ok {
 		return c.Status(401).SendString("Unauthorized")
 	}
+	data, err := auth.GetPlayerPageData(database.DB, accountID)
+	if err != nil || !data.TeamName.Valid {
+		return c.Status(400).JSON(fiber.Map{"error": "No team linked"})
+	}
+
+	seasonID, err := strconv.ParseInt(c.FormValue("season_id"), 10, 64)
+	if err != nil {
+		return c.Status(400).SendString("A season must be selected")
+	}
+	var seasonName string
+	if err := database.DB.QueryRow(
+		"SELECT NAME FROM SEASONS WHERE SEASON_ID = ? AND TEAMNAME = ?",
+		seasonID, data.TeamName.String,
+	).Scan(&seasonName); err != nil {
+		return c.Status(400).SendString("Invalid season")
+	}
+
 	file, err := c.FormFile("demo")
 	if err != nil {
 		return c.Status(400).SendString("No file provided")
 	}
-	season := c.FormValue("season")
 	matchLabel := c.FormValue("match_label")
 	savePath := auth.GetDemoPath() + file.Filename
 	if err := c.SaveFile(file, savePath); err != nil {
 		return c.Status(500).SendString("Failed to save demo")
 	}
-	database.DB.Exec("UPDATE MATCHES SET SEASON = ?, NOTES = ? WHERE DEMO_NAME = ?",
-		season, matchLabel, file.Filename)
+
+	res, updateErr := database.DB.Exec(
+		"UPDATE MATCHES SET SEASON_ID = ?, SEASON = ?, NOTES = ? WHERE DEMO_NAME = ?",
+		seasonID, seasonName, matchLabel, file.Filename,
+	)
+	var rowsAffected int64
+	if updateErr == nil {
+		rowsAffected, _ = res.RowsAffected()
+	}
+	if updateErr != nil || rowsAffected == 0 {
+		// No MATCHES row exists yet for this demo (it's normally created
+		// lazily by the /AllDemos scan) — create it now so the season
+		// assignment isn't silently lost.
+		gameMap := quickMapName(savePath)
+		savedDate := time.Now().Local().Format("2006-1-2")
+		if _, err := database.DB.Exec(
+			`INSERT INTO MATCHES (DEMO_NAME, MAP, SAVED_DATE, PARSED_STATS, PARSED_2D, SEASON_ID, SEASON, NOTES)
+			 VALUES (?, ?, ?, 0, 0, ?, ?, ?)`,
+			file.Filename, gameMap, savedDate, seasonID, seasonName, matchLabel,
+		); err != nil {
+			log.Printf("UploadDemo insert error: %v", err)
+			return c.Status(500).SendString("Demo saved but failed to register match")
+		}
+	}
 	return c.JSON(fiber.Map{"message": "Demo uploaded", "filename": file.Filename})
 }
 
@@ -621,20 +728,21 @@ func Seasons(c fiber.Ctx) error {
 	}
 	query := `
 		SELECT SEASON_ID, NAME,
-		START_DATE, END_DATE,
+		COALESCE(START_DATE, ''), COALESCE(END_DATE, ''),
 		COALESCE(NOTES, '')
 		FROM SEASONS
 		WHERE TEAMNAME = ?
 	`
 	rows, err := database.DB.Query(query, data.TeamName.String)
+	fmt.Printf("Team Nam: %v, %v", data.TeamName.String, data)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to query seasons"})
 	}
 	type SeasonsResp struct {
 		SeasonId   int    `json:"id"`
 		SeasonName string `json:"name"`
-		StartDate  string `json:"startDate,string"`
-		EndDate    string `json:"endDate,string"`
+		StartDate  string `json:"startDate"`
+		EndDate    string `json:"endDate"`
 		Notes      string `json:"notes"`
 	}
 	var seasons []SeasonsResp
@@ -642,9 +750,313 @@ func Seasons(c fiber.Ctx) error {
 		var s SeasonsResp
 		if err := rows.Scan(&s.SeasonId, &s.SeasonName, &s.StartDate, &s.EndDate, &s.Notes); err != nil {
 			continue
+		} else {
+			fmt.Printf("%v", err)
 		}
 		seasons = append(seasons, s)
 	}
 
-	return c.JSON(seasons)
+	return c.Status(200).JSON(seasons)
+}
+
+type seasonRequest struct {
+	Name      string `json:"name"`
+	StartDate string `json:"startDate"`
+	EndDate   string `json:"endDate"`
+	Notes     string `json:"notes"`
+}
+
+func CreateSeason(c fiber.Ctx) error {
+	accountID, ok := c.Locals("accountID").(int64)
+	if !ok {
+		return c.Status(401).SendString("Unauthorized")
+	}
+	data, err := auth.GetPlayerPageData(database.DB, accountID)
+	if err != nil || !data.TeamName.Valid {
+		return c.Status(400).JSON(fiber.Map{"error": "No team linked"})
+	}
+	var req seasonRequest
+	if err := c.Bind().Body(&req); err != nil {
+		return c.Status(400).SendString("Invalid request body")
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return c.Status(400).SendString("Season name is required")
+	}
+
+	res, err := database.DB.Exec(
+		`INSERT INTO SEASONS (TEAMNAME, NAME, START_DATE, END_DATE, NOTES)
+		 VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)`,
+		data.TeamName.String, req.Name, req.StartDate, req.EndDate, req.Notes,
+	)
+	if err != nil {
+		log.Printf("CreateSeason insert error: %v", err)
+		return c.Status(500).SendString("Failed to create season")
+	}
+	id, _ := res.LastInsertId()
+	return c.Status(200).JSON(fiber.Map{"id": id, "message": "Season created"})
+}
+
+func EditSeason(c fiber.Ctx) error {
+	accountID, ok := c.Locals("accountID").(int64)
+	if !ok {
+		return c.Status(401).SendString("Unauthorized")
+	}
+	data, err := auth.GetPlayerPageData(database.DB, accountID)
+	if err != nil || !data.TeamName.Valid {
+		return c.Status(400).JSON(fiber.Map{"error": "No team linked"})
+	}
+	seasonID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid season id"})
+	}
+	var req seasonRequest
+	if err := c.Bind().Body(&req); err != nil {
+		return c.Status(400).SendString("Invalid request body")
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return c.Status(400).SendString("Season name is required")
+	}
+
+	res, err := database.DB.Exec(
+		`UPDATE SEASONS SET NAME = ?, START_DATE = NULLIF(?, ''), END_DATE = NULLIF(?, ''), NOTES = ?
+		 WHERE SEASON_ID = ? AND TEAMNAME = ?`,
+		req.Name, req.StartDate, req.EndDate, req.Notes, seasonID, data.TeamName.String,
+	)
+	if err != nil {
+		log.Printf("EditSeason update error: %v", err)
+		return c.Status(500).SendString("Failed to update season")
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return c.Status(404).SendString("Season not found")
+	}
+	return c.JSON(fiber.Map{"message": "Season updated"})
+}
+
+type unassignedPlayer struct {
+	PlayerID   string `json:"playerId"`
+	PlayerName string `json:"playerName"`
+}
+
+type unassignedGroup struct {
+	MatchID     int                `json:"matchId"`
+	SideIndex   int                `json:"sideIndex"`
+	DefaultName string             `json:"defaultName"`
+	DemoName    string             `json:"demoName"`
+	Map         string             `json:"map"`
+	Players     []unassignedPlayer `json:"players"`
+}
+
+// UnassignedPlayers lists demo sides that had no clan tag set and no
+// existing roster to fall back to (see resolveMatchTeam in the parser
+// package) — a data-quality queue any logged-in user can help triage,
+// not scoped to a single team since the players in it belong to none.
+func UnassignedPlayers(c fiber.Ctx) error {
+	if _, ok := c.Locals("accountID").(int64); !ok {
+		return c.Status(401).SendString("Unauthorized")
+	}
+
+	query := `
+		SELECT u.MATCHID, u.SIDE_INDEX, u.DEFAULT_TEAM_NAME,
+		       u.PLAYERID, p.PLAYERNAME,
+		       m.DEMO_NAME, m.MAP
+		FROM UNASSIGNED_MATCH_PLAYERS u
+		JOIN PLAYERS p ON p.PLAYERID = u.PLAYERID
+		JOIN MATCHES m ON m.MATCHID = u.MATCHID
+	`
+	args := []interface{}{}
+	if matchIDParam := c.Query("matchId"); matchIDParam != "" {
+		matchID, err := strconv.ParseInt(matchIDParam, 10, 64)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid matchId"})
+		}
+		query += " WHERE u.MATCHID = ?"
+		args = append(args, matchID)
+	}
+	query += " ORDER BY u.MATCHID, u.SIDE_INDEX, p.PLAYERNAME"
+
+	rows, err := database.DB.Query(query, args...)
+	if err != nil {
+		log.Printf("UnassignedPlayers query error: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to load unassigned players"})
+	}
+	defer rows.Close()
+
+	type groupKey struct {
+		MatchID   int
+		SideIndex int
+	}
+	groups := map[groupKey]*unassignedGroup{}
+	var order []groupKey
+
+	for rows.Next() {
+		var matchID, sideIndex int
+		var defaultName, demoName, mapName string
+		var playerID int64
+		var playerName string
+		if err := rows.Scan(&matchID, &sideIndex, &defaultName, &playerID, &playerName, &demoName, &mapName); err != nil {
+			continue
+		}
+		key := groupKey{matchID, sideIndex}
+		g, ok := groups[key]
+		if !ok {
+			g = &unassignedGroup{
+				MatchID: matchID, SideIndex: sideIndex,
+				DefaultName: defaultName, DemoName: demoName, Map: mapName,
+			}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.Players = append(g.Players, unassignedPlayer{
+			PlayerID: strconv.FormatInt(playerID, 10), PlayerName: playerName,
+		})
+	}
+
+	result := make([]*unassignedGroup, 0, len(order))
+	for _, key := range order {
+		result = append(result, groups[key])
+	}
+	return c.JSON(result)
+}
+
+// ResolveUnassigned assigns every player on one unresolved demo side to a
+// real team for that match, then clears them from the unassigned queue.
+// It intentionally does NOT touch TEAM_MEMBERS — that's a separate,
+// deliberate roster-management action, not something a one-off match
+// resolution should imply.
+func ResolveUnassigned(c fiber.Ctx) error {
+	if _, ok := c.Locals("accountID").(int64); !ok {
+		return c.Status(401).SendString("Unauthorized")
+	}
+	var req struct {
+		MatchID   int    `json:"matchId"`
+		SideIndex int    `json:"sideIndex"`
+		TeamName  string `json:"teamName"`
+	}
+	if err := c.Bind().Body(&req); err != nil {
+		return c.Status(400).SendString("Invalid request body")
+	}
+	if strings.TrimSpace(req.TeamName) == "" {
+		return c.Status(400).SendString("Team name is required")
+	}
+
+	tx, err := database.DB.Begin()
+	if err != nil {
+		return c.Status(500).SendString("Failed to start transaction")
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("INSERT IGNORE INTO TEAMS (TEAMNAME) VALUES (?)", req.TeamName); err != nil {
+		log.Printf("ResolveUnassigned team insert error: %v", err)
+		return c.Status(500).SendString("Failed to register team")
+	}
+	if _, err := tx.Exec(
+		`UPDATE MATCH_STATS SET TEAMNAME = ?
+		 WHERE MATCHID = ? AND PLAYERID IN (
+		     SELECT PLAYERID FROM UNASSIGNED_MATCH_PLAYERS WHERE MATCHID = ? AND SIDE_INDEX = ?
+		 )`,
+		req.TeamName, req.MatchID, req.MatchID, req.SideIndex,
+	); err != nil {
+		log.Printf("ResolveUnassigned update error: %v", err)
+		return c.Status(500).SendString("Failed to assign team")
+	}
+	// MATCHES.TEAM_A_NAME/TEAM_B_NAME is a display label for the match
+	// overview — only overwrite it if it's still showing the generic
+	// placeholder, so a mixed side that already picked up a real name at
+	// parse time isn't clobbered by resolving its remaining stragglers.
+	nameColumn := "TEAM_A_NAME"
+	if req.SideIndex == 1 {
+		nameColumn = "TEAM_B_NAME"
+	}
+	if _, err := tx.Exec(
+		"UPDATE MATCHES SET "+nameColumn+" = ? WHERE MATCHID = ? AND "+nameColumn+" IN ('Team 1', 'Team 2')",
+		req.TeamName, req.MatchID,
+	); err != nil {
+		log.Printf("ResolveUnassigned match name update error: %v", err)
+		return c.Status(500).SendString("Failed to update match display name")
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM UNASSIGNED_MATCH_PLAYERS WHERE MATCHID = ? AND SIDE_INDEX = ?`,
+		req.MatchID, req.SideIndex,
+	); err != nil {
+		log.Printf("ResolveUnassigned cleanup error: %v", err)
+		return c.Status(500).SendString("Failed to clear unassigned entry")
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("ResolveUnassigned commit error: %v", err)
+		return c.Status(500).SendString("Failed to save changes")
+	}
+	return c.JSON(fiber.Map{"message": "Team assigned"})
+}
+
+// DismissUnassigned drops one unresolved demo side from the review queue
+// without assigning it a team — e.g. an opponent side from a solo/premier
+// match the user doesn't care to track. Their MATCH_STATS.TEAMNAME simply
+// stays NULL, which already keeps them out of every team-scoped query.
+func DismissUnassigned(c fiber.Ctx) error {
+	if _, ok := c.Locals("accountID").(int64); !ok {
+		return c.Status(401).SendString("Unauthorized")
+	}
+	var req struct {
+		MatchID   int `json:"matchId"`
+		SideIndex int `json:"sideIndex"`
+	}
+	if err := c.Bind().Body(&req); err != nil {
+		return c.Status(400).SendString("Invalid request body")
+	}
+
+	if _, err := database.DB.Exec(
+		`DELETE FROM UNASSIGNED_MATCH_PLAYERS WHERE MATCHID = ? AND SIDE_INDEX = ?`,
+		req.MatchID, req.SideIndex,
+	); err != nil {
+		log.Printf("DismissUnassigned error: %v", err)
+		return c.Status(500).SendString("Failed to dismiss unassigned entry")
+	}
+	return c.JSON(fiber.Map{"message": "Dismissed"})
+}
+
+// RenameTeam changes TEAMS.TEAMNAME, which every other table references by
+// name rather than a surrogate ID — this only works because those foreign
+// keys are declared ON UPDATE CASCADE, so a single UPDATE here propagates
+// to SEASONS, MATCHES.TEAM_A_NAME/TEAM_B_NAME, MATCH_STATS, TEAM_MEMBERS,
+// TEAM_INVITES, and TEAM_MODERATORS automatically.
+func RenameTeam(c fiber.Ctx) error {
+	accountID, ok := c.Locals("accountID").(int64)
+	if !ok {
+		return c.Status(401).SendString("Unauthorized")
+	}
+	data, err := auth.GetPlayerPageData(database.DB, accountID)
+	if err != nil || !data.TeamName.Valid {
+		return c.Status(400).JSON(fiber.Map{"error": "No team linked"})
+	}
+
+	var req struct {
+		NewName string `json:"newName"`
+	}
+	if err := c.Bind().Body(&req); err != nil {
+		return c.Status(400).SendString("Invalid request body")
+	}
+	newName := strings.TrimSpace(req.NewName)
+	if newName == "" {
+		return c.Status(400).SendString("Team name is required")
+	}
+	oldName := data.TeamName.String
+	if newName == oldName {
+		return c.JSON(fiber.Map{"message": "Team name unchanged", "teamName": newName})
+	}
+
+	var existing string
+	err = database.DB.QueryRow("SELECT TEAMNAME FROM TEAMS WHERE TEAMNAME = ?", newName).Scan(&existing)
+	if err == nil {
+		return c.Status(409).SendString("That team name is already taken")
+	}
+	if err != sql.ErrNoRows {
+		log.Printf("RenameTeam lookup error: %v", err)
+		return c.Status(500).SendString("Something went wrong. Please try again.")
+	}
+
+	if _, err := database.DB.Exec("UPDATE TEAMS SET TEAMNAME = ? WHERE TEAMNAME = ?", newName, oldName); err != nil {
+		log.Printf("RenameTeam update error: %v", err)
+		return c.Status(500).SendString("Failed to rename team")
+	}
+	return c.JSON(fiber.Map{"message": "Team renamed", "teamName": newName})
 }

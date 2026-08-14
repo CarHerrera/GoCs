@@ -1,25 +1,32 @@
+import { useEffect } from 'react';
 import DemoTable from './components/demoTables.tsx'
 import PlayerPage from './components/PlayerPage.tsx';
-import { useId } from 'react';
-import { BrowserRouter, Link, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import TestKonva from './testingKonva.tsx';
 import Login from './components/Login.tsx';
 import TeamStatsDashboard from './components/TeamPage.tsx';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import SeasonPage from './components/SeasonMatches.tsx';
 import MatchPage from './components/MatchPage.tsx';
 import Whiteboard from './components/Whiteboard.tsx';
 function Home() {
-  const fileId = useId();
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading && user) {
+      navigate('/accountHome');
+    }
+  }, [loading, user, navigate]);
+
+  if (loading || user) return null;
+
   return <>
       <div>
         <Login></Login>
       </div>
-      {/* <div>
-        <h1>Or Check out these already parsed demos</h1>
-        <Link to="/demoList"><button>Click Me!</button></Link>
-      </div> */}
+
   </>
 }
 

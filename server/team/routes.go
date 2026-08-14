@@ -18,4 +18,10 @@ func RegisterRoutes(app *fiber.App) {
 	g.Post("/upload-demo", UploadDemo)
 	g.Get("/roster", Roster)
 	g.Get("/seasons", Seasons)
+	g.Post("/seasons", CreateSeason)
+	g.Put("/seasons/:id", EditSeason)
+	g.Get("/unassigned", UnassignedPlayers)
+	g.Post("/unassigned/resolve", ResolveUnassigned)
+	g.Post("/unassigned/dismiss", DismissUnassigned)
+	g.Put("/rename", RenameTeam)
 }

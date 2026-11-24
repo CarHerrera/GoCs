@@ -7,11 +7,11 @@ RUN apk add --no-cache git
 WORKDIR /app
 
 # Copy go mod files and download dependencies
-COPY go.mod go.sum ./
+COPY ./server/go.mod ./server/go.sum ./
 RUN go mod download
 
 # Copy the source code and build
-COPY . .
+COPY ./server .
 RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
 # STAGE 2: Final Runtime Image
@@ -23,7 +23,7 @@ WORKDIR /root/
 COPY --from=builder /app/main .
 
 # COPY THE VITE FILES
-COPY --from=builder /app/client ./client
+COPY ./client ./client
 
 
 RUN mkdir uploads

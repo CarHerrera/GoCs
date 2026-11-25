@@ -57,3 +57,19 @@
   flex-direction: column;
 }
 
+#DemoTableList th, tr:nth-child(even){
+  background-color: #1f2028;
+  /* border-top: 1px solid white;
+  border-bottom: 1px solid blue; */
+}
+ 
+#DemoTableList td{
+  border: 1px solid white;
+} 
+
+#DemoTableList tr:hover {
+  color:#aa3bff;
+}
+/* #DemoTableList{
+  border-collapse: collapse;
+} */

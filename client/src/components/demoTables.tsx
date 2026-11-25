@@ -62,12 +62,12 @@ function DemoTable() {
             saved = x.savedate.substring(1, saved.length-1)
         }
 
-        return <tr key={i}><td>{file}</td><td>{saved}</td><td>{date}</td><td>{map}</td><td>{stats ? "true" : "false" }</td><td>{parsed ? "true" : "false"}</td>
+        return <tr key={i}><td><Link to={`/MatchPage?matchId=${id}`}>{file}</Link></td><td>{saved}</td><td>{date}</td><td>{map}</td><td>{stats ? "true" : "false" }</td><td>{parsed ? "true" : "false"}</td>
         <td><Link to={`/MatchPage?matchId=${id}`}>Stats</Link></td></tr>
     })
     return <>
         <div >
-            <table style={{width:"100%"}}>
+            <table id="DemoTableList" style={{width:"100%"}}>
                 <thead>
                     <tr>
                         <th>File Name</th>

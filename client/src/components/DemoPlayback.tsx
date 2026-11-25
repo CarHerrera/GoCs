@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef, useMemo } from "react";
-import { Layer, Stage, Text, Circle, Group, Rect, Image, Wedge, Arc} from 'react-konva';
+import { Layer, Stage, Text, Circle, Group, Rect, Image, Wedge, Arc, Line} from 'react-konva';
 import { URLImage } from "../URLImage";
 import Konva from "konva";
 import useImage from "use-image";
 import { type_to_svg, WeaponType } from '../helpers/equipIdToSvg'
+import type { KonvaEventObject, NodeConfig } from "konva/lib/Node";
+import type { Vector2d } from "konva/lib/types";
 const PlayerAction = {
     isMoving: 1,
     beginPlanting: 2,
@@ -915,7 +917,7 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
             401, 404, 405,                       // Zeus, Bomb, Knife
             501, 502, 503, 504, 505, 506         // Grenades
         ];
-        const [drawerView, setDrawerView] = useState<'events'|'notes'|null>(null);
+        const [sideTabView, setSideTabView] = useState<'events'|'notes'|null>(null);
         const [bombSvg] = useImage(bomb_source);
         const [stats, setStats] = useState<MatchEvents>()
         // Real roster/clan team names for this match, resolved server-side
@@ -928,6 +930,8 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
         const [stageDim, setStageDim] = useState({ width: 0, height: 0 });
         const [round, setRound] =useState(1);
         const [isPlaying, setPlaying] = useState<PlaybackState>({playing: false, round_no:1, tick_no: 0, ready: false});
+        const [isDrawing, setDrawing] = useState<boolean>(false);
+        const [drawable, setDraw] = useState<boolean>(false);
         const playbackContainer = useRef<HTMLDivElement>(null);
         const round_begin_ticks = useRef<number[]>([]);
         const weaponImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
@@ -939,15 +943,19 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
         const tickRef = useRef(isPlaying.tick_no);
         const hudRef = useRef<Map<string, Konva.Group>>(new Map());
         const hudCacheRef = useRef<Map<string, PlayerHudCache>>(new Map());
-        const timerRef = useRef<{ring?: Konva.Arc, fill?:Konva.Arc, text?: Konva.Text, label?: Konva.Text}>({});
         const fullPlaybacRef = useRef<PlayBackCache>(null)
         const progressRef = useRef<HTMLInputElement>(null);
         const playheadRef = useRef<HTMLInputElement>(null);
         // ROUND NO -> TICK NO -> PLAYBACK REF
         const playbackRef = useRef<PlayBackRef>(null);
         const videoPlaybackLayer = useRef<Konva.Layer>(null)
+        const DrawingLayerRef = useRef<Konva.Layer>(null);
+        const [tool, setTool] = useState<string>('brush');
+        const [lines, setLines] = useState<Array<{tool:string; points:number[]}>>([]);
         const hudLayerRef = useRef<Konva.Layer>(null);
+        const StageRef = useRef<Konva.Stage>(null);
         const videoGroup = useRef<Konva.Group>(null);
+        const lastMousePos = useRef<Vector2d>({x:0,y:0});
         function syncTick(tick: number, opts?: { pause?: boolean }) {
             tickRef.current = tick;
             if (progressRef.current) {
@@ -1627,19 +1635,52 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
         }, [stats, round, size.width, stageDim.height]);
         // console.log(grenadeCacheNew.current)
         const freeSpace:number = (stageDim.width-size.width)/2
+        const handleMouseDown = (e: KonvaEventObject<MouseEvent>) => {
+            console.log("MOUSE DOWN")
+            if (StageRef.current){
+                if (drawable){
+                    setDrawing(true)
+                    lastMousePos.current = StageRef.current!.getPointerPosition()!
+                    setLines([...lines, { tool, points: [lastMousePos.current!.x - freeSpace, lastMousePos.current!.y] }]);
+                }                
+            }
+            
+            
+        }
+        const handleMouseUp = (e: KonvaEventObject<MouseEvent>) => {
+            setDrawing(false)
+        }
+
+        const handleMouseMove = (e: KonvaEventObject<MouseEvent>) => {
+            if (isDrawing) {
+                e.evt.preventDefault()
+                const stage = StageRef.current!.getStage();
+                const point = stage.getPointerPosition()!;
+                let lastLine = lines[lines.length - 1];
+                // add point
+                // subtract the freespace since it makes it all ofset
+                lastLine.points = lastLine.points.concat([point.x - freeSpace    , point.y]);
+
+                // replace last
+                lines.splice(lines.length - 1, 1, lastLine);
+                setLines(lines.concat());
+                console.log("MOUSE MOVE")
+            }
+        }
     return <>
         <div id="playbackGrid" >
             
 
             <div className="rail">
-                <button className={drawerView==='events'?'active':''} onClick={() => setDrawerView(v => v==='events'?null:'events')}>☰</button>
-                <button className={drawerView==='notes'?'active':''} onClick={() => setDrawerView(v => v==='notes'?null:'notes')}>✎</button>
+                <button className={sideTabView==='events'?'active':''} onClick={() => setSideTabView(v => v==='events'?null:'events')}>☰</button>
+                <button className={sideTabView==='notes'?'active':''} onClick={() => setSideTabView(v => v==='notes'?null:'notes')}>✎</button>
                 <div className="divider"></div>
-                <button title="Drawing mode">✏</button>
+                <button title="Drawing mode" onClick={() => setDraw(!drawable)} style={drawable ? {'color':'green'} : {'color':'red'}}>✏</button>
+                <button title="Clear Canvas" onClick={() => setLines([])}>🗑</button>
                 <button title="Settings">⚙</button>
-                {drawerView && (
+                {sideTabView && (
                 <div className="drawer">
-                    {drawerView === 'events'
+                    {sideTabView === 'events'
                     ? (
                         <ol>
                         {
@@ -1701,10 +1742,15 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
             </div>
                 
             <div id="playbackMap" ref={playbackContainer}>
-                <Stage  width={stageDim.width} height={stageDim.height}>
-                    <Layer ref={videoPlaybackLayer}   >
+                <Stage  width={stageDim.width} height={stageDim.height} ref={StageRef}>
+                    <Layer ref={videoPlaybackLayer}  
+                        onMouseDown={handleMouseDown}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUp}
+                         >
+                        
                         <Group x={freeSpace} id={"mainPlayer"} ref={videoGroup}>
-                            <URLImage src={`/overviews/${map}.jpg`} name="map"  width={size.width} height={stageDim.height}></URLImage>     
+                                <URLImage src={`/overviews/${map}.jpg`} name="map"  width={size.width} height={stageDim.height}></URLImage>      
                        
                                 { playbackRef.current && 
                                     Array.from(playbackRef.current!.player_pos.get(0)!.entries()).map(([playerid, ps], i) => {
@@ -1758,9 +1804,24 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
                                       }
                                     })
                                 } 
-                        </Group>              
+                                {lines.map((line, i) => (
+                                    <Line
+                                       
+                                        key={i}
+                                        points={line.points}
+                                        stroke="#df4b26"
+                                        strokeWidth={5}
+                                        tension={0.5}
+                                        lineCap="round"
+                                        lineJoin="round"
+                                        globalCompositeOperation={
+                                            line.tool === 'eraser' ? 'destination-out' : 'source-over'
+                                        }
+                                        />
+                                ))}
+                        </Group> 
+                        
                     </Layer>
-                    
                     <Layer ref={hudLayerRef}>
                         <Group x={0} >
                             {   playbackRef.current &&
@@ -1793,19 +1854,7 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
                             }
                         </Group>
                     </Layer>
-                    <Layer>
-                        <Group x={stageDim.width-(freeSpace *1.5)} y={50}>
-                            <Arc ref={(n) => { if(n) timerRef.current.ring = n }}
-                                innerRadius={34} outerRadius={39}
-                                angle={360} rotation={-90} fill="#1B222A" />
-                            <Arc ref={(n) => { if(n) timerRef.current.fill = n }}
-                                innerRadius={34} outerRadius={39}
-                                angle={0} rotation={-90} fill="#4C86C9" />
-                            <Text ref={(n) => { if(n) timerRef.current.text = n }}
-                                text="0:00" fontSize={16} fill="#E7EAEE"
-                                x={-39} y={-5} width={90} align="center" />
-                        </Group>
-                    </Layer>
+                    
                 </Stage>
             </div>
             
@@ -1838,21 +1887,6 @@ function DemoPlayback({matchId, map}:{matchId:number, map:String}){
                     console.log(tickRef.current)
                     }}>forward</button>
             </div>
-            {/* <div className="progress">
-                {playbackRef.current && 
-                    <input id="playback-slider" onChange={(e) => {
-                        const target = parseInt(e.target.value, 10)
-                        tickRef.current = target;
-                        setPlaying((prev) => ({ ...prev, tick_no: target, playing:false}));
-                        if (progressRef.current) {
-                            progressRef.current.value = target.toString();
-                        }
-                        
-                        RedrawAtTicK(fullPlaybacRef.current!, tickRef.current)
-                    }} ref={progressRef} type="range" style={{width: "100%"}}  min={round_begin_ticks.current[0] ?? 0} defaultValue={tickRef.current} max={round_begin_ticks.current[1]}/>
-                }
-                
-            </div> */}
             <div className="progress">
                     {playbackRef.current && (() => {
                         const playback = playbackRef.current;
